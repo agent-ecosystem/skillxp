@@ -1,5 +1,6 @@
 proctor-results/
-bin/
+# Root-level build output only; wrappers/npm/bin is source
+/bin/
 
 # goreleaser build output
 dist/
