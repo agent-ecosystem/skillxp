@@ -42,42 +42,35 @@ Cutting a release:
    missing**, so this step cannot be skipped.
 3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`. The Release
    workflow does the rest: GitHub release + archives, brew formula
-   (`Formula/skillxp.rb` in the tap), npm packages (six platform
-   packages + the `skillxp` main package), and PyPI platform wheels.
+   (`Formula/skillxp.rb` in the tap), npm packages (platform packages +
+   the `skillxp` main package), and PyPI platform wheels.
 
-### One-time setup before the first release
+npm currently ships four platform packages (darwin/linux × arm64/x64):
+npm's spam detection blocked creating both `skillxp-win32-*` names on
+the v0.1.0 publish. When npm support frees them, restore the win32
+entries in `wrappers/npm/scripts/build-packages.mjs` (PLATFORMS),
+`wrappers/npm/lib/binary.js` (SUPPORTED), and
+`wrappers/npm/package.json` (optionalDependencies), and drop the
+Windows caveat from `wrappers/npm/README.md`. Windows users are covered
+by PyPI wheels and release archives meanwhile.
+
+### One-time setup (done for v0.1.0, recorded for posterity)
 
 - **`HOMEBREW_TAP_TOKEN` repo secret**: a token with push access to
   agent-ecosystem/homebrew-tap (same token agentsummons uses); goreleaser
   pushes the formula with it.
-- **PyPI**: no manual publish needed. Add a *pending* trusted publisher
-  on pypi.org (Account settings → Publishing → "Create a new pending
-  publisher") for project `skillxp`, repo `agent-ecosystem/skillxp`,
-  workflow `release.yml`. The pending publisher becomes the project's
-  normal publisher on the workflow's first upload.
+- **PyPI**: no manual publish was needed. A *pending* trusted publisher
+  on pypi.org (project `skillxp`, repo `agent-ecosystem/skillxp`,
+  workflow `release.yml`) converted to the project's normal publisher on
+  the workflow's first upload.
 - **npm**: trusted publishing can only be configured on a package that
-  already exists, so the first publish of each package is manual, with a
-  logged-in npm session (Node ≥ 24 for a current npm):
-
-  ```bash
-  # after the v0.1.0 GitHub release exists
-  gh release download v0.1.0 --dir assets --pattern '*.tar.gz' --pattern '*.zip'
-  node wrappers/npm/scripts/build-packages.mjs --version 0.1.0 --assets assets --out dist-npm
-  for pkg in ./dist-npm/platform/*/; do npm publish "$pkg" --access public; done
-  npm publish ./dist-npm/skillxp --access public
-  ```
-
-  Then on npmjs.com, for **each of the seven packages** (`skillxp` and
-  `skillxp-{darwin,linux}-{arm64,x64}`, `skillxp-win32-{arm64,x64}`):
-  Settings → Trusted publishing → GitHub Actions, repo
-  `agent-ecosystem/skillxp`, workflow `release.yml`. From the next tag
-  the workflow publishes tokenlessly; its already-published check makes
-  re-running a partially failed publish safe.
-
-  For the first release, the workflow's `publish-npm` job will fail
-  (no trusted publisher yet) — that's expected; do the manual publish
-  above and re-run the job to confirm the skip-if-published logic, or
-  just leave it for v0.1.1.
+  already exists, so the five v0.1.0 packages were published manually
+  (`npm publish --access public --otp=...` on the build-packages.mjs
+  output). Each package then needs, on npmjs.com: Settings → Trusted
+  publishing → GitHub Actions, repo `agent-ecosystem/skillxp`, workflow
+  `release.yml`. From the next tag the workflow publishes tokenlessly;
+  its already-published check makes re-running a partially failed
+  publish safe.
 
 The npm/PyPI wrappers are distribution-only (CLI passthrough plus
 `binaryPath()`/`binary_path()`): the CLI writes observation bundles to

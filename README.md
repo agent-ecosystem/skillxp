@@ -40,7 +40,10 @@ go install github.com/agent-ecosystem/skillxp/cmd/skillxp@latest
 ```
 
 As a Go library: `go get github.com/agent-ecosystem/skillxp`. The
-harnesses you observe must be installed and authenticated.
+harnesses you observe must be installed and authenticated. On Windows,
+use pip or a [release binary](https://github.com/agent-ecosystem/skillxp/releases);
+the npm package temporarily has no Windows support (a registry naming
+issue is being worked out with npm).
 
 ## Quick start
 

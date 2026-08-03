@@ -6,6 +6,20 @@ tag). Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-03
+
+### Fixed
+
+- npm: dropped the `skillxp-win32-arm64` and `skillxp-win32-x64`
+  platform packages — npm's registry spam detection blocked creating
+  both names on the first publish, and `skillxp@0.1.0` shipped
+  optionalDependencies pointing at packages that don't exist (harmless
+  on macOS/Linux, but no binary and a misleading error on Windows).
+  Windows npm users get an actionable pointer to the PyPI package or a
+  release binary with `SKILLXP_BINARY`; the entries return when npm
+  support frees the names. GitHub release archives and PyPI wheels
+  still cover Windows on both architectures.
+
 ## [0.1.0] - 2026-08-03
 
 Initial release.

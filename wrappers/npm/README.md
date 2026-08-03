@@ -10,6 +10,12 @@ what actually reached the model, with transcript evidence.
 Installing this package delivers the real Go binary for your platform via
 an optional dependency (no install scripts).
 
+Windows is temporarily unavailable on npm (a registry naming issue is
+being worked out with npm support); use the
+[PyPI package](https://pypi.org/project/skillxp/) or a
+[release binary](https://github.com/agent-ecosystem/skillxp/releases)
+with `SKILLXP_BINARY` in the meantime.
+
 ## CLI
 
 ```bash

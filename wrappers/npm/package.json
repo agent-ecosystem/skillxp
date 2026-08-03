@@ -37,8 +37,6 @@
     "skillxp-darwin-arm64": "0.0.0",
     "skillxp-darwin-x64": "0.0.0",
     "skillxp-linux-arm64": "0.0.0",
-    "skillxp-linux-x64": "0.0.0",
-    "skillxp-win32-arm64": "0.0.0",
-    "skillxp-win32-x64": "0.0.0"
+    "skillxp-linux-x64": "0.0.0"
   }
 }

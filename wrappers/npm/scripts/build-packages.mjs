@@ -14,13 +14,18 @@ import { fileURLToPath } from "node:url";
 
 // Node platform key → goreleaser artifact identity. Mirrors SUPPORTED in
 // lib/binary.js; both move together with .goreleaser.yaml's build matrix.
+// The win32 pair is temporarily absent: npm's registry spam detection
+// blocks creating both skillxp-win32-* package names (403 on first
+// publish of v0.1.0; same heuristic that blocked agentsummons-win32-x64).
+// A missing optionalDependencies name is a Windows-install hazard, so the
+// entries cannot ship until npm support frees the names. When it does,
+// restore win32-arm64 and win32-x64 here, in SUPPORTED, and in
+// package.json's optionalDependencies.
 const PLATFORMS = [
   { key: "darwin-arm64", os: "darwin", cpu: "arm64", artifact: "darwin_arm64", ext: "tar.gz" },
   { key: "darwin-x64", os: "darwin", cpu: "x64", artifact: "darwin_amd64", ext: "tar.gz" },
   { key: "linux-arm64", os: "linux", cpu: "arm64", artifact: "linux_arm64", ext: "tar.gz" },
   { key: "linux-x64", os: "linux", cpu: "x64", artifact: "linux_amd64", ext: "tar.gz" },
-  { key: "win32-arm64", os: "win32", cpu: "arm64", artifact: "windows_arm64", ext: "zip" },
-  { key: "win32-x64", os: "win32", cpu: "x64", artifact: "windows_amd64", ext: "zip" },
 ];
 
 function arg(name) {
