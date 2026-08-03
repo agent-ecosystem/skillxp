@@ -1,0 +1,75 @@
+# Landing page sections for the Lotus Docs homepage template.
+#
+# The theme ships its own data/landing.yaml and Hugo merges it underneath
+# this one, so any section not defined here renders with the theme's demo
+# copy. Explicitly disable theme sections we don't use (re-check when
+# updating the theme). Avoid '--' in prose here: Goldmark's typographer
+# renders it as an en dash in HTML, which breaks parity segment matching.
+
+imageCompare:
+  enable: false
+
+hero:
+  enable: true
+  weight: 10
+  template: hero
+
+  badge:
+    text: pre-release
+    color: warning
+    pill: false
+    soft: true
+
+  title: "skillxp"
+  subtitle: Skill invocation runner. Stage an [Agent Skill](https://agentskills.io) on a real harness, invoke it headlessly, and report what actually reached the model, with **transcript evidence**.
+
+  # Inline SVG terminal card (assets/images/terminal-hero.svg). Its text is
+  # in the DOM, so it's excluded from parity in agent-docs.config.yml.
+  image:
+    path: "images"
+    filename: "terminal-hero.svg"
+    alt: "Terminal showing skillxp harnesses and observe commands"
+
+  ctaButton:
+    icon: rocket_launch
+    btnText: "Get Started"
+    url: "/docs/quickstart/"
+  cta2Button:
+    icon: code
+    btnText: "View on GitHub"
+    url: "https://github.com/agent-ecosystem/skillxp"
+
+  info: "**Open Source** MIT Licensed."
+
+featureGrid:
+  enable: true
+  weight: 20
+  template: feature grid
+
+  title: Why skillxp?
+  subtitle: Skill authors publish for 25+ platforms that each load, present, and manage skills differently, and mostly invisibly. skillxp makes that behavior observable, from the session transcript rather than the model's self-reporting.
+
+  items:
+    - title: Transcript evidence
+      icon: fact_check
+      description: Every claim about what a platform did with your skill traces to a session transcript, with line numbers. The model's opinion of its own context is never the source.
+
+    - title: Rates, never anecdotes
+      icon: percent
+      description: Loading behavior is model-dependent, so one run proves little. Repeat runs the same spec N times in fresh fixtures and reports how often each traced phrase reached each location.
+
+    - title: Provenance classification
+      icon: alt_route
+      description: The trace report classifies each occurrence of a phrase, distinguishing harness-injected content from model-pulled tool results, model output, and echoes that prove nothing.
+
+    - title: Sandboxed fixtures
+      icon: security
+      description: Runs execute against an isolated home cloned per run, so your installed skills can't leak into the experiment and the experiment can't pollute your user scope.
+
+    - title: Built on the stack
+      icon: layers
+      description: agentsummons invokes the harness, agentminutes parses the transcript, and skillxp adds the third layer of lore, covering how each harness discovers, activates, and records skills.
+
+    - title: Observations, never verdicts
+      icon: balance
+      description: skillxp produces observations; graders consume them. The Agent Skill Implementation loading benchmark is the first consumer, with its checks and verdict logic in its own repo.
