@@ -27,6 +27,16 @@ The npm and pip packages wrap the same prebuilt Go binary; nothing extra
 is downloaded at install time. Prebuilt static binaries are also on the
 [releases page](https://github.com/agent-ecosystem/skillxp/releases).
 
+On Windows, use pip or a release binary: the npm package temporarily has
+no Windows support (a registry naming issue is being worked out with
+npm).
+
+Verify any install with:
+
+```sh
+skillxp version
+```
+
 ## Library
 
 ```sh

@@ -40,7 +40,9 @@ Cutting a release:
    heading. The release workflow extracts the tag's section for the
    GitHub release notes and **fails the release if the section is
    missing**, so this step cannot be skipped.
-3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`. The Release
+3. Bump the hero badge version in `site/data/landing.yaml`
+   (`hero.badge.text`) and republish the docs site.
+4. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`. The Release
    workflow does the rest: GitHub release + archives, brew formula
    (`Formula/skillxp.rb` in the tap), npm packages (platform packages +
    the `skillxp` main package), and PyPI platform wheels.

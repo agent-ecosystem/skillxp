@@ -1,5 +1,3 @@
-# NOTE: skillxp is not yet published. Do not deploy this site until the
-# library is public; baseURL is presumptive.
 baseURL = "https://skillxp.dev/"
 title = "skillxp"
 languageCode = "en-US"
