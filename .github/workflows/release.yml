@@ -1,0 +1,134 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # The release notes are the tag's CHANGELOG.md section, not a commit
+      # list. Written to runner.temp because an untracked file in the repo
+      # would make goreleaser's dirty-tree check fail. A missing section
+      # fails the release before anything publishes: promote Unreleased to
+      # the version heading before tagging (see DEVELOPMENT.md).
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          heading="## [${GITHUB_REF_NAME#v}]"
+          awk -v heading="$heading" '
+            found && /^## / { exit }
+            found { print }
+            substr($0, 1, length(heading)) == heading { found = 1 }
+          ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
+          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/release-notes.md"; then
+            echo "CHANGELOG.md has no section for ${GITHUB_REF_NAME#v}; promote Unreleased before tagging (see DEVELOPMENT.md)" >&2
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/release-notes.md"
+
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          version: "~> v2"
+          args: release --clean --release-notes ${{ runner.temp }}/release-notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+  # The npm and PyPI wrappers repackage the archives goreleaser just
+  # uploaded, so wrapper versions can never drift from the Go release.
+  # Both publish via registry trusted publishing (OIDC): each package has
+  # this repo + workflow configured as a trusted publisher on npmjs.com /
+  # pypi.org, and no registry token secrets exist.
+  publish-npm:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing + --provenance
+    steps:
+      - uses: actions/checkout@v6
+
+      # Node 24, not 22: the 22.22.2 build ships npm 10.9.7, which crashes
+      # during self-upgrade (npm/cli#9152), and trusted publishing needs a
+      # current npm.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@latest
+
+      - name: Download release archives
+        run: gh release download "$GITHUB_REF_NAME" --dir assets --pattern '*.tar.gz' --pattern '*.zip'
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Test wrapper
+        run: npm test --prefix wrappers/npm
+
+      - name: Assemble packages
+        run: node wrappers/npm/scripts/build-packages.mjs --version "${GITHUB_REF_NAME#v}" --assets assets --out dist-npm
+
+      # Skipping already-published versions makes the step idempotent, so a
+      # partially failed publish can be re-run without choking on the
+      # packages that made it out the first time.
+      - name: Publish (platform packages before the main package)
+        run: |
+          publish() {
+            local name version
+            name=$(node -p "require('./$1/package.json').name")
+            version=$(node -p "require('./$1/package.json').version")
+            if [ -n "$(npm view "$name@$version" version 2>/dev/null || true)" ]; then
+              echo "$name@$version already published; skipping"
+              return 0
+            fi
+            npm publish "$1" --access public --provenance
+          }
+          for pkg in ./dist-npm/platform/*/; do
+            publish "$pkg"
+          done
+          # The ./ prefix keeps npm from reading the path as a GitHub
+          # owner/repo shorthand (it did, and refused with EALLOWGIT).
+          publish ./dist-npm/skillxp
+
+  publish-pypi:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # PyPI trusted publishing
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Download release archives
+        run: gh release download "$GITHUB_REF_NAME" --dir assets --pattern '*.tar.gz' --pattern '*.zip'
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Test wrapper and build platform wheels
+        run: |
+          pip install build wheel
+          python -m unittest discover -s wrappers/pypi/tests
+          python wrappers/pypi/build_wheels.py --version "${GITHUB_REF_NAME#v}" --assets assets --out wheelhouse
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: wheelhouse

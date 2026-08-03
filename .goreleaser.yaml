@@ -1,0 +1,52 @@
+version: 2
+
+release:
+  github:
+    owner: agent-ecosystem
+    name: skillxp
+
+# Release notes come from CHANGELOG.md: the workflow extracts the tag's
+# section and passes it via --release-notes, which itself suppresses the
+# generated commit-list changelog. Do not also set changelog.disable —
+# a disabled changelog makes goreleaser ignore --release-notes and
+# publish an empty release body (observed on agentsummons v0.3.0).
+
+# goreleaser's default ldflags stamp main.version with the tag, so
+# `skillxp --version` reports the release without a hardcoded constant
+# to bump.
+builds:
+  - binary: skillxp
+    main: ./cmd/skillxp
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+# brews is deprecated upstream in favor of homebrew_casks, but casks are
+# macOS-only and get Gatekeeper quarantine on unsigned binaries; a formula
+# also works on Linux Homebrew and matches the tap's existing Formula/
+# layout. Revisit if goreleaser v2 drops it.
+brews:
+  - directory: Formula
+    repository:
+      owner: agent-ecosystem
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/agent-ecosystem/skillxp
+    description: Observe how agent harnesses load and activate Agent Skills, with transcript evidence
+    license: MIT
+    install: |
+      bin.install "skillxp"
+    test: |
+      assert_match version.to_s, shell_output("#{bin}/skillxp --version")

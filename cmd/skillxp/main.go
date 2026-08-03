@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -20,6 +21,23 @@ import (
 	"github.com/agent-ecosystem/skillxp/profile"
 	"github.com/agent-ecosystem/skillxp/trace"
 )
+
+// version is stamped by goreleaser on release builds (default ldflags,
+// -X main.version). Must stay a package-level var named "version" for
+// that stamping to land.
+var version = "dev"
+
+// cliVersion returns the stamped release version, falling back to the
+// module version Go embeds under `go install` (where no ldflags run).
+func cliVersion() string {
+	if version != "dev" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return version
+}
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -38,6 +56,9 @@ func run(args []string) error {
 		return harnesses()
 	case "observe":
 		return observeCmd(args[1:])
+	case "version", "-version", "--version":
+		fmt.Println("skillxp version", cliVersion())
+		return nil
 	case "help", "-h", "--help":
 		usage()
 		return nil
@@ -51,6 +72,9 @@ func usage() {
 	fmt.Fprint(os.Stderr, `Usage:
   skillxp harnesses
       Show supported harnesses and their skill install locations.
+
+  skillxp version
+      Print the skillxp version.
 
   skillxp observe -harness <id> -install <skill-dir> -prompt <text> [flags]
       Install skill(s) in a fixture, invoke the harness, and write an

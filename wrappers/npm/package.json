@@ -1,0 +1,44 @@
+{
+  "name": "skillxp",
+  "version": "0.0.0",
+  "description": "Observes how agent harnesses (Antigravity CLI, Claude Code, Codex CLI) load and activate Agent Skills. Node wrapper around the skillxp Go CLI.",
+  "main": "lib/index.js",
+  "bin": {
+    "skillxp": "bin/skillxp.js"
+  },
+  "files": [
+    "bin",
+    "lib"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
+  "keywords": [
+    "agent",
+    "skills",
+    "agent-skills",
+    "claude-code",
+    "codex",
+    "antigravity",
+    "headless"
+  ],
+  "author": "Dachary Carey",
+  "license": "MIT",
+  "homepage": "https://github.com/agent-ecosystem/skillxp",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agent-ecosystem/skillxp.git",
+    "directory": "wrappers/npm"
+  },
+  "optionalDependencies": {
+    "skillxp-darwin-arm64": "0.0.0",
+    "skillxp-darwin-x64": "0.0.0",
+    "skillxp-linux-arm64": "0.0.0",
+    "skillxp-linux-x64": "0.0.0",
+    "skillxp-win32-arm64": "0.0.0",
+    "skillxp-win32-x64": "0.0.0"
+  }
+}

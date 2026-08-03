@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skillxp"
+# Placeholder: build_wheels.py stamps the release version into a temp copy.
+version = "0.0.0"
+description = "Observes how agent harnesses (Antigravity CLI, Claude Code, Codex CLI) load and activate Agent Skills. Python wrapper around the skillxp Go CLI."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Dachary Carey" }]
+requires-python = ">=3.9"
+keywords = ["agent", "skills", "agent-skills", "claude-code", "codex", "antigravity", "headless"]
+
+[project.urls]
+Homepage = "https://github.com/agent-ecosystem/skillxp"
+Repository = "https://github.com/agent-ecosystem/skillxp"
+
+[project.scripts]
+skillxp = "skillxp:_main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+skillxp = ["bin/*"]

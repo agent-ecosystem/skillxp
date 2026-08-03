@@ -462,7 +462,7 @@ func transcriptHasPrompt(hid harness.ID, path, prompt string) bool {
 	if err != nil {
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	s, err := agentminutes.Parse(f, hid, harness.Options{Permissive: true})
 	if err != nil {
 		return false

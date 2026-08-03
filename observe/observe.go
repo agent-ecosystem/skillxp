@@ -198,7 +198,7 @@ func ObserveSession(ctx context.Context, cfg Config, harnessID agentsummons.ID, 
 		return nil, err
 	}
 	if !cfg.KeepFixture {
-		defer os.RemoveAll(fixture)
+		defer func() { _ = os.RemoveAll(fixture) }()
 	} else {
 		cfg.logf("fixture kept at %s", fixture)
 	}
@@ -390,7 +390,7 @@ func parseTranscript(p profile.Profile, cliVersion, path string) (*session.Sessi
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return agentminutes.Parse(f, harness.ID(p.Harness), p.ParseOptions(cliVersion))
 }
 
