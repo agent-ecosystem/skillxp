@@ -11,95 +11,19 @@ import (
 	"time"
 
 	"github.com/agent-ecosystem/agentsummons"
+	"github.com/agent-ecosystem/skillxp/internal/harnesstest"
+	"github.com/agent-ecosystem/skillxp/internal/invoker"
 )
 
 // stubHarness swaps the invocation seams for the test's lifetime.
 func stubHarness(t *testing.T, cliVersion string, run func(context.Context, agentsummons.Request) (*agentsummons.Result, error)) {
 	t.Helper()
-	prevInvoke, prevVersion := invoke, harnessVersion
-	t.Cleanup(func() { invoke, harnessVersion = prevInvoke, prevVersion })
-	harnessVersion = func(ctx context.Context, id agentsummons.ID) (string, error) {
+	prevRun, prevVersion := invoker.Run, invoker.Version
+	t.Cleanup(func() { invoker.Run, invoker.Version = prevRun, prevVersion })
+	invoker.Version = func(ctx context.Context, id agentsummons.ID) (string, error) {
 		return cliVersion, nil
 	}
-	invoke = run
-}
-
-func ccUser(sessionID, cwd, prompt, uuid string, ts time.Time) string {
-	return fmt.Sprintf(`{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":%q},"uuid":%q,"timestamp":%q,"userType":"external","entrypoint":"cli","cwd":%q,"sessionId":%q,"version":"2.1.205","gitBranch":"main"}`,
-		prompt, uuid, ts.UTC().Format("2006-01-02T15:04:05.000Z"), cwd, sessionID) + "\n"
-}
-
-func ccAssistant(sessionID, cwd, text, uuid, msgID string, ts time.Time) string {
-	return fmt.Sprintf(`{"parentUuid":null,"isSidechain":false,"type":"assistant","message":{"id":%q,"model":"claude-fable-5","role":"assistant","type":"message","stop_reason":"end_turn","content":[{"type":"text","text":%q}],"usage":{"input_tokens":10,"output_tokens":5}},"requestId":"req_1","uuid":%q,"timestamp":%q,"userType":"external","entrypoint":"cli","cwd":%q,"sessionId":%q,"version":"2.1.205","gitBranch":"main"}`,
-		msgID, text, uuid, ts.UTC().Format("2006-01-02T15:04:05.000Z"), cwd, sessionID) + "\n"
-}
-
-// extraEnvValue extracts KEY's value from a request's ExtraEnv.
-func extraEnvValue(req agentsummons.Request, key string) string {
-	for _, e := range req.ExtraEnv {
-		if v, ok := strings.CutPrefix(e, key+"="); ok {
-			return v
-		}
-	}
-	return ""
-}
-
-// fakeClaudeCode returns an invoke stub that behaves like a sandboxed
-// claude-code run: it writes (or appends to) the session transcript inside
-// the sandbox's CLAUDE_CONFIG_DIR and echoes the preset session ID.
-func fakeClaudeCode(t *testing.T, calls *[]agentsummons.Request) func(context.Context, agentsummons.Request) (*agentsummons.Result, error) {
-	t.Helper()
-	return func(ctx context.Context, req agentsummons.Request) (*agentsummons.Result, error) {
-		*calls = append(*calls, req)
-		configDir := extraEnvValue(req, "CLAUDE_CONFIG_DIR")
-		if configDir == "" {
-			t.Error("invoke: no CLAUDE_CONFIG_DIR in request env")
-		}
-		sessionID := req.SessionID
-		if req.Resume != "" {
-			sessionID = req.Resume
-		}
-		now := time.Now()
-		n := len(*calls)
-		record := ccUser(sessionID, req.Workdir, req.Prompt, fmt.Sprintf("u-%d", n), now) +
-			ccAssistant(sessionID, req.Workdir, "done", fmt.Sprintf("a-%d", n), fmt.Sprintf("msg_%d", n), now)
-		path := filepath.Join(configDir, "projects", "-proj", sessionID+".jsonl")
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return nil, err
-		}
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := f.WriteString(record); err != nil {
-			return nil, err
-		}
-		if err := f.Close(); err != nil {
-			return nil, err
-		}
-		return &agentsummons.Result{
-			Harness:     req.Harness,
-			Argv:        []string{"claude", "-p", req.Prompt},
-			PromptIndex: 2,
-			Workdir:     req.Workdir,
-			Start:       now,
-			End:         now.Add(time.Second),
-			ExitCode:    0,
-			SessionID:   req.SessionID,
-		}, nil
-	}
-}
-
-func writeSkill(t *testing.T) string {
-	t.Helper()
-	src := filepath.Join(t.TempDir(), "my-skill")
-	if err := os.MkdirAll(src, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(src, "SKILL.md"), []byte("---\nname: my-skill\n---\nbody\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return src
+	invoker.Run = run
 }
 
 func TestObserveSessionNoTurns(t *testing.T) {
@@ -120,17 +44,17 @@ func TestObserveSessionUnknownHarness(t *testing.T) {
 // not even the version probe.
 func TestUserSkillsRequireSandbox(t *testing.T) {
 	var calls []agentsummons.Request
-	stubHarness(t, "2.1.205", fakeClaudeCode(t, &calls))
+	stubHarness(t, "2.1.205", harnesstest.FakeClaudeCode(t, &calls))
 	probes := 0
-	prev := harnessVersion
-	t.Cleanup(func() { harnessVersion = prev })
-	harnessVersion = func(ctx context.Context, id agentsummons.ID) (string, error) {
+	prev := invoker.Version
+	t.Cleanup(func() { invoker.Version = prev })
+	invoker.Version = func(ctx context.Context, id agentsummons.ID) (string, error) {
 		probes++
 		return "2.1.205", nil
 	}
 
 	spec := SessionSpec{
-		UserSkillDirs: []string{writeSkill(t)},
+		UserSkillDirs: []string{harnesstest.WriteSkill(t)},
 		Turns:         []Turn{{Prompt: "hi"}},
 	}
 	_, err := ObserveSession(context.Background(), Config{}, agentsummons.ClaudeCode, spec)
@@ -148,11 +72,11 @@ func TestUserSkillsRequireSandbox(t *testing.T) {
 func TestObserveSessionPipeline(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-fake")
 	var calls []agentsummons.Request
-	fake := fakeClaudeCode(t, &calls)
+	fake := harnesstest.FakeClaudeCode(t, &calls)
 	stubHarness(t, "2.1.205", func(ctx context.Context, req agentsummons.Request) (*agentsummons.Result, error) {
 		// The sandbox lives inside the fixture, which is torn down with
 		// the run; the user-scope install must be checked at call time.
-		configDir := extraEnvValue(req, "CLAUDE_CONFIG_DIR")
+		configDir := harnesstest.ExtraEnv(req, "CLAUDE_CONFIG_DIR")
 		if _, err := os.Stat(filepath.Join(configDir, "skills", "my-skill", "SKILL.md")); err != nil {
 			t.Errorf("user-scope skill not in sandbox: %v", err)
 		}
@@ -162,8 +86,8 @@ func TestObserveSessionPipeline(t *testing.T) {
 	var beforeRan bool
 	archive := filepath.Join(t.TempDir(), "archive")
 	spec := SessionSpec{
-		SkillDirs:     []string{writeSkill(t)},
-		UserSkillDirs: []string{writeSkill(t)},
+		SkillDirs:     []string{harnesstest.WriteSkill(t)},
+		UserSkillDirs: []string{harnesstest.WriteSkill(t)},
 		Turns: []Turn{
 			{Prompt: "activate the skill", Activation: true},
 			{Prompt: "what did it say", Before: func(projectDir string) error {
@@ -273,7 +197,7 @@ func TestObserveSessionAntigravityFallbacks(t *testing.T) {
 	var calls []agentsummons.Request
 	stubHarness(t, "1.1.9", func(ctx context.Context, req agentsummons.Request) (*agentsummons.Result, error) {
 		calls = append(calls, req)
-		sandboxHome := extraEnvValue(req, "HOME")
+		sandboxHome := harnesstest.ExtraEnv(req, "HOME")
 		if sandboxHome == "" {
 			t.Error("invoke: no HOME override in request env")
 		}
@@ -323,6 +247,52 @@ func TestObserveSessionAntigravityFallbacks(t *testing.T) {
 	}
 }
 
+// A claude-code run that spawns subagents leaves agent-*.jsonl transcripts
+// beside the session; archiving must copy them and repoint SubagentPaths,
+// or the evidence vanishes with the fixture.
+func TestArchiveIncludesSubagents(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-fake")
+	var calls []agentsummons.Request
+	fake := harnesstest.FakeClaudeCode(t, &calls)
+	stubHarness(t, "2.1.205", func(ctx context.Context, req agentsummons.Request) (*agentsummons.Result, error) {
+		res, err := fake(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		configDir := harnesstest.ExtraEnv(req, "CLAUDE_CONFIG_DIR")
+		sub := filepath.Join(configDir, "projects", "-proj", req.SessionID, "subagents", "agent-sub1.jsonl")
+		if err := os.MkdirAll(filepath.Dir(sub), 0o755); err != nil {
+			return nil, err
+		}
+		record := harnesstest.SidechainUser(req.SessionID, "sub1", req.Workdir, "delegated subtask", "s-1", time.Now())
+		if err := os.WriteFile(sub, []byte(record), 0o644); err != nil {
+			return nil, err
+		}
+		return res, nil
+	})
+
+	archive := filepath.Join(t.TempDir(), "archive")
+	cfg := Config{Sandbox: true, ArchiveDir: archive}
+	obs, err := Observe(context.Background(), cfg, agentsummons.ClaudeCode, Spec{Prompt: "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(obs.SubagentPaths) != 1 {
+		t.Fatalf("subagent paths = %v, want one", obs.SubagentPaths)
+	}
+	sub := obs.SubagentPaths[0]
+	if filepath.Dir(sub) != archive {
+		t.Errorf("subagent transcript %q not repointed into archive %q", sub, archive)
+	}
+	if filepath.Base(sub) != "agent-sub1.jsonl" {
+		t.Errorf("subagent transcript basename = %q", filepath.Base(sub))
+	}
+	if _, err := os.Stat(sub); err != nil {
+		t.Errorf("archived subagent transcript: %v", err)
+	}
+}
+
 func TestRepeatCountValidation(t *testing.T) {
 	if _, err := Repeat(context.Background(), Config{}, agentsummons.ClaudeCode, SessionSpec{}, 0); err == nil {
 		t.Error("want error for n=0")
@@ -332,7 +302,7 @@ func TestRepeatCountValidation(t *testing.T) {
 func TestRepeatRecordsFailuresAndContinues(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-fake")
 	var calls []agentsummons.Request
-	fake := fakeClaudeCode(t, &calls)
+	fake := harnesstest.FakeClaudeCode(t, &calls)
 	stubHarness(t, "2.1.205", func(ctx context.Context, req agentsummons.Request) (*agentsummons.Result, error) {
 		if len(calls) == 1 { // second invocation
 			calls = append(calls, req)

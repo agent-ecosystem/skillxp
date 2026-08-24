@@ -18,14 +18,9 @@ import (
 	"github.com/agent-ecosystem/agentminutes/harness"
 	"github.com/agent-ecosystem/agentminutes/session"
 	"github.com/agent-ecosystem/agentsummons"
+	"github.com/agent-ecosystem/skillxp/internal/invoker"
 	"github.com/agent-ecosystem/skillxp/profile"
 	"github.com/agent-ecosystem/skillxp/trace"
-)
-
-// Invocation seams; tests swap these to fake the harness end of the pipe.
-var (
-	invoke         = agentsummons.Run
-	harnessVersion = agentsummons.Version
 )
 
 // Turn is one prompt in a session.
@@ -197,7 +192,7 @@ func ObserveSession(ctx context.Context, cfg Config, harnessID agentsummons.ID, 
 	if len(spec.UserSkillDirs) > 0 && !cfg.Sandbox {
 		return nil, fmt.Errorf("observe: user-scope installs require Config.Sandbox (the real user scope is never touched)")
 	}
-	cliVersion, err := harnessVersion(ctx, harnessID)
+	cliVersion, err := invoker.Version(ctx, harnessID)
 	if err != nil {
 		return nil, fmt.Errorf("observe: %s not usable: %w", harnessID, err)
 	}
@@ -318,7 +313,7 @@ func runTurn(ctx context.Context, cfg Config, p profile.Profile, cliVersion, pro
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cfg.logf("[%s] turn %d: invoking", p.Harness, index+1)
-	res, err := invoke(runCtx, req)
+	res, err := invoker.Run(runCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("invoke: %w", err)
 	}

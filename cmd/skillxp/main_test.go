@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -10,10 +11,26 @@ import (
 
 	"github.com/agent-ecosystem/agentminutes/session"
 	"github.com/agent-ecosystem/agentsummons"
+	"github.com/agent-ecosystem/skillxp/internal/harnesstest"
+	"github.com/agent-ecosystem/skillxp/internal/invoker"
 	"github.com/agent-ecosystem/skillxp/observe"
 	"github.com/agent-ecosystem/skillxp/profile"
 	"github.com/agent-ecosystem/skillxp/trace"
 )
+
+// stubHarness fakes the claude-code invocation seam for the test's
+// lifetime and prepares the sandbox credentials it needs.
+func stubHarness(t *testing.T) {
+	t.Helper()
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-fake")
+	prevRun, prevVersion := invoker.Run, invoker.Version
+	t.Cleanup(func() { invoker.Run, invoker.Version = prevRun, prevVersion })
+	invoker.Version = func(ctx context.Context, id agentsummons.ID) (string, error) {
+		return "2.1.205", nil
+	}
+	var calls []agentsummons.Request
+	invoker.Run = harnesstest.FakeClaudeCode(t, &calls)
+}
 
 func TestRunDispatch(t *testing.T) {
 	if err := run(nil); err == nil {
@@ -66,6 +83,103 @@ func TestObserveFlagValidation(t *testing.T) {
 				t.Errorf("err = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// TestObserveCmdSingleRun drives the single-run execution path end to end
+// against the fake harness: bundle files, archived transcript, and the
+// trace report (the fake's assistant always answers "done").
+func TestObserveCmdSingleRun(t *testing.T) {
+	stubHarness(t)
+	out := filepath.Join(t.TempDir(), "out")
+	err := observeCmd([]string{
+		"-harness", "claude-code",
+		"-install", harnesstest.WriteSkill(t),
+		"-prompt", "say the word",
+		"-activation",
+		"-trace", "done",
+		"-sandbox",
+		"-out", out,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(out, "observation.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bundle struct {
+		Harness        string                        `json:"harness"`
+		SessionID      string                        `json:"session_id"`
+		TranscriptPath string                        `json:"transcript_path"`
+		Traces         map[string][]trace.Occurrence `json:"traces"`
+	}
+	if err := json.Unmarshal(data, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	if bundle.Harness != "claude-code" || bundle.SessionID == "" {
+		t.Errorf("observation.json = %+v", bundle)
+	}
+	occs := bundle.Traces["done"]
+	if len(occs) != 1 || occs[0].Location != trace.LocModelOutput {
+		t.Errorf("traces = %+v, want one model-output occurrence", occs)
+	}
+	// The archived transcript sits in the bundle dir and survives the run.
+	if filepath.Dir(bundle.TranscriptPath) != out {
+		t.Errorf("transcript %q not archived into %q", bundle.TranscriptPath, out)
+	}
+	if _, err := os.Stat(bundle.TranscriptPath); err != nil {
+		t.Errorf("archived transcript: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "session.json")); err != nil {
+		t.Errorf("session.json: %v", err)
+	}
+}
+
+func TestObserveCmdMultiRun(t *testing.T) {
+	stubHarness(t)
+	out := filepath.Join(t.TempDir(), "out")
+	err := observeCmd([]string{
+		"-harness", "claude-code",
+		"-install", harnesstest.WriteSkill(t),
+		"-prompt", "say the word",
+		"-trace", "done,ghost-phrase",
+		"-runs", "2",
+		"-sandbox",
+		"-out", out,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(out, "summary.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var summary struct {
+		Harness   string                    `json:"harness"`
+		Requested int                       `json:"requested"`
+		Succeeded int                       `json:"succeeded"`
+		Traces    map[string]map[string]int `json:"traces"`
+	}
+	if err := json.Unmarshal(data, &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.Requested != 2 || summary.Succeeded != 2 {
+		t.Errorf("summary = %+v, want 2/2 runs", summary)
+	}
+	if summary.Traces["done"]["model-output"] != 2 {
+		t.Errorf("traces[done] = %v, want model-output in both runs", summary.Traces["done"])
+	}
+	if summary.Traces["ghost-phrase"]["absent"] != 2 {
+		t.Errorf("traces[ghost-phrase] = %v, want absent in both runs", summary.Traces["ghost-phrase"])
+	}
+	// Each run's bundle lands beside its archived transcript.
+	for _, run := range []string{"run-01", "run-02"} {
+		if _, err := os.Stat(filepath.Join(out, run, "observation.json")); err != nil {
+			t.Errorf("%s bundle: %v", run, err)
+		}
 	}
 }
 
