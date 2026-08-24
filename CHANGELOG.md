@@ -6,6 +6,14 @@ tag). Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Bumped agentsummons to v0.3.2 and agentminutes to v0.4.0: both
+  revalidated against agy 1.1.19 / claude-code 2.1.231 / codex 0.149.1,
+  with agentminutes absorbing codex 0.149.1's item_completed transcript
+  format and adding the derived `total_prompt_tokens` to session
+  totals.
+
 ## [0.1.1] - 2026-08-03
 
 ### Fixed
