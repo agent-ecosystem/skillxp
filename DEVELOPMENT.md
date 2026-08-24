@@ -11,6 +11,10 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./...  # release artifacts are st
 # Wrapper tests
 npm test --prefix wrappers/npm
 python3 -m unittest discover -s wrappers/pypi/tests
+
+# Live smoke test: one real skill-activation run against an installed,
+# authenticated harness. Opt-in, bills real tokens, never runs in CI.
+SKILLXP_E2E=claude-code go test ./observe/ -run TestLiveSmoke -v
 ```
 
 ## What this repo is (and is not)

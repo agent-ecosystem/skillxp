@@ -210,25 +210,7 @@ func observeCmd(args []string) error {
 		// "absent" counts runs where it never appeared.
 		Traces map[string]map[string]int `json:"traces,omitempty"`
 	}{Harness: ro.Harness, Requested: ro.Requested, Succeeded: len(ro.Runs), Errors: ro.Errors}
-	if len(markers) > 0 {
-		summary.Traces = map[string]map[string]int{}
-		for _, m := range markers {
-			counts := map[string]int{}
-			for _, occs := range perRun {
-				locs := map[string]bool{}
-				for _, o := range occs[m] {
-					locs[string(o.Location)] = true
-				}
-				if len(locs) == 0 {
-					counts["absent"]++
-				}
-				for loc := range locs {
-					counts[loc]++
-				}
-			}
-			summary.Traces[m] = counts
-		}
-	}
+	summary.Traces = summarizeTraces(perRun, markers)
 	if err := writeJSON(filepath.Join(*out, "summary.json"), summary); err != nil {
 		return err
 	}
@@ -243,6 +225,33 @@ func observeCmd(args []string) error {
 		}
 	}
 	return nil
+}
+
+// summarizeTraces counts, per phrase and location, the number of runs in
+// which the phrase appeared at that location at least once; "absent" counts
+// runs where it never appeared. Nil when no phrases were traced.
+func summarizeTraces(perRun []map[string][]trace.Occurrence, markers []string) map[string]map[string]int {
+	if len(markers) == 0 {
+		return nil
+	}
+	summary := map[string]map[string]int{}
+	for _, m := range markers {
+		counts := map[string]int{}
+		for _, occs := range perRun {
+			locs := map[string]bool{}
+			for _, o := range occs[m] {
+				locs[string(o.Location)] = true
+			}
+			if len(locs) == 0 {
+				counts["absent"]++
+			}
+			for loc := range locs {
+				counts[loc]++
+			}
+		}
+		summary[m] = counts
+	}
+	return summary
 }
 
 // writeBundle writes observation.json and session.json for one turn's

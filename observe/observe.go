@@ -22,6 +22,12 @@ import (
 	"github.com/agent-ecosystem/skillxp/trace"
 )
 
+// Invocation seams; tests swap these to fake the harness end of the pipe.
+var (
+	invoke         = agentsummons.Run
+	harnessVersion = agentsummons.Version
+)
+
 // Turn is one prompt in a session.
 type Turn struct {
 	// Prompt is the turn's prompt. Callers planning to trace phrases
@@ -187,7 +193,7 @@ func ObserveSession(ctx context.Context, cfg Config, harnessID agentsummons.ID, 
 	if err != nil {
 		return nil, err
 	}
-	cliVersion, err := agentsummons.Version(ctx, harnessID)
+	cliVersion, err := harnessVersion(ctx, harnessID)
 	if err != nil {
 		return nil, fmt.Errorf("observe: %s not usable: %w", harnessID, err)
 	}
@@ -311,7 +317,7 @@ func runTurn(ctx context.Context, cfg Config, p profile.Profile, cliVersion, pro
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cfg.logf("[%s] turn %d: invoking", p.Harness, index+1)
-	res, err := agentsummons.Run(runCtx, req)
+	res, err := invoke(runCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("invoke: %w", err)
 	}
