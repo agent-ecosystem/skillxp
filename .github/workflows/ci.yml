@@ -33,6 +33,18 @@ jobs:
       - name: Test
         run: go test -race ./... -count=1
 
+      # The floor is a rot guard, not a target: it sits a few points under
+      # the real number (83.9% when introduced) so honest fluctuations pass
+      # while a package quietly losing its tests fails.
+      - name: Coverage floor
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          go test ./... -count=1 -coverprofile=cover.out -coverpkg=./...
+          total=$(go tool cover -func=cover.out | tail -1 | awk '{print $3}' | tr -d '%')
+          echo "total statement coverage: ${total}%"
+          awk -v t="$total" 'BEGIN { exit (t+0 >= 80) ? 0 : 1 }' || {
+            echo "coverage ${total}% is below the 80% floor"; exit 1; }
+
       - name: Build
         run: go build ./...
 

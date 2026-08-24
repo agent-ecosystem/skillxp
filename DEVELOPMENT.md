@@ -17,6 +17,22 @@ python3 -m unittest discover -s wrappers/pypi/tests
 SKILLXP_E2E=claude-code go test ./observe/ -run TestLiveSmoke -v
 ```
 
+## Testing conventions
+
+Hermetic tests never invoke a real harness. Production code calls
+agentsummons through the `internal/invoker` seam, and tests swap it for
+`internal/harnesstest.FakeClaudeCode`, which writes genuine transcript
+records into the sandbox store so the real locate and parse pipeline
+runs against real files. Extend those helpers rather than spawning
+harnesses; the only test that talks to a real harness is the opt-in
+live smoke test above. Locate-attribution tests build synthetic
+transcript stores per harness layout (see `profile/locate_test.go`)
+and always pass explicit roots so tests never touch `~/.claude`,
+`~/.codex`, or `~/.gemini`. CI enforces an 80% statement-coverage
+floor; the JSON field names of observation bundles are pinned by
+contract tests (`observe/contract_test.go`) because graders parse
+them.
+
 ## What this repo is (and is not)
 
 skillxp owns skill-loading *observation* knowledge: where each harness

@@ -137,6 +137,29 @@ func TestObserveCmdSingleRun(t *testing.T) {
 	}
 }
 
+// -install accepts a comma-separated list, tolerant of surrounding
+// whitespace; each entry is validated as a skill directory.
+func TestObserveCmdMultipleInstalls(t *testing.T) {
+	stubHarness(t)
+	other := filepath.Join(t.TempDir(), "other-skill")
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(other, "SKILL.md"), []byte("---\nname: other-skill\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := observeCmd([]string{
+		"-harness", "claude-code",
+		"-install", harnesstest.WriteSkill(t) + " , " + other,
+		"-prompt", "hi",
+		"-sandbox",
+		"-out", filepath.Join(t.TempDir(), "out"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestObserveCmdMultiRun(t *testing.T) {
 	stubHarness(t)
 	out := filepath.Join(t.TempDir(), "out")

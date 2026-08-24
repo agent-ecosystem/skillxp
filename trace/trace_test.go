@@ -149,6 +149,34 @@ func TestToolReadsOf(t *testing.T) {
 	}
 }
 
+// TestOccurrenceJSONContract pins the serialized field names of a trace
+// occurrence; graders parse these out of observation bundles.
+func TestOccurrenceJSONContract(t *testing.T) {
+	occ := Occurrence{
+		EventIndex: 3,
+		Kind:       session.KindSystem,
+		Location:   LocHarnessInjected,
+		Detail:     "attachment/skill_listing",
+		Line:       7,
+	}
+	data, err := json.Marshal(occ)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"event_index", "kind", "location", "detail", "line"} {
+		if _, ok := m[key]; !ok {
+			t.Errorf("Occurrence JSON missing key %q (got %v)", key, m)
+		}
+	}
+	if len(m) != 5 {
+		t.Errorf("Occurrence JSON has %d keys, want 5: %v", len(m), m)
+	}
+}
+
 func TestModel(t *testing.T) {
 	s := sessionOf(
 		userEvent(session.OriginHuman, "hi"),
