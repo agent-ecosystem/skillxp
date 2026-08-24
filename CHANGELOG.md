@@ -6,6 +6,13 @@ tag). Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `observe.ObserveSession` now rejects a spec with user-scope skill
+  installs but no `Config.Sandbox` before probing the harness, so the
+  misconfiguration surfaces as the sandbox-requirement error even when
+  the harness is not installed (previously the not-usable error won).
+
 ## [0.1.2] - 2026-08-24
 
 ### Changed
