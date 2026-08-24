@@ -6,6 +6,8 @@ tag). Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-08-24
+
 ### Changed
 
 - Bumped agentsummons to v0.3.2 and agentminutes to v0.4.0: both
