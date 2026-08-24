@@ -2,6 +2,7 @@ package profile
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -217,6 +218,114 @@ func TestLocateOnceAmbiguous(t *testing.T) {
 	_, err := p.locateOnce(codexResult(t, workdir, prompt), root)
 	if err == nil || !strings.Contains(err.Error(), "cannot attribute") {
 		t.Errorf("err = %v, want attribution refusal", err)
+	}
+}
+
+// agyUserInput renders an antigravity USER_INPUT step carrying the prompt
+// the way the harness records it (wrapped in USER_REQUEST tags).
+func agyUserInput(t *testing.T, prompt string, ts time.Time) string {
+	t.Helper()
+	record, err := json.Marshal(map[string]any{
+		"step_index": 0,
+		"source":     "USER_EXPLICIT",
+		"type":       "USER_INPUT",
+		"status":     "DONE",
+		"created_at": ts.UTC().Format(time.RFC3339),
+		"content":    "<USER_REQUEST>\n" + prompt + "\n</USER_REQUEST>",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(record) + "\n"
+}
+
+// writeConversation writes one antigravity conversation into root's brain
+// layout: <root>/<convID>/.system_generated/logs/transcript_full.jsonl.
+func writeConversation(t *testing.T, root, convID, content string, mtime time.Time) {
+	t.Helper()
+	path := filepath.Join(root, convID, ".system_generated", "logs", "transcript_full.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func agyResult(t *testing.T, prompt string) *agentsummons.Result {
+	t.Helper()
+	return &agentsummons.Result{
+		Harness:     agentsummons.Antigravity,
+		Argv:        []string{"agy", prompt},
+		PromptIndex: 1,
+		Workdir:     t.TempDir(), // transcripts record no cwd; must not matter
+		Start:       runStart,
+		End:         runEnd,
+	}
+}
+
+// Antigravity transcripts record no cwd, so attribution is by time window
+// alone; the session ID comes from the conversation directory name.
+func TestLocateOnceAntigravityByTimeWindow(t *testing.T) {
+	p, err := For(agentsummons.Antigravity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	started := runStart.Add(time.Second)
+	writeConversation(t, root, "conv-real", agyUserInput(t, "hello", started), runEnd.Add(time.Second))
+	// A conversation outside the window must not be a candidate.
+	old := runStart.Add(-time.Hour)
+	writeConversation(t, root, "conv-old", agyUserInput(t, "hello", old), old.Add(time.Minute))
+
+	ref, err := p.locateOnce(agyResult(t, "hello"), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref.Meta.SessionID != "conv-real" {
+		t.Errorf("located %q, want the conversation directory name conv-real", ref.Meta.SessionID)
+	}
+}
+
+// One agy invocation writes a warm-up conversation plus the real one; only
+// the real transcript records the run's prompt as a human message.
+func TestLocateOnceAntigravityWarmup(t *testing.T) {
+	p, err := For(agentsummons.Antigravity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	started := runStart.Add(time.Second)
+	mtime := runEnd.Add(time.Second)
+	writeConversation(t, root, "conv-warmup", agyUserInput(t, "warm-up chatter", started), mtime)
+	writeConversation(t, root, "conv-real", agyUserInput(t, "the real prompt", started), mtime)
+
+	ref, err := p.locateOnce(agyResult(t, "the real prompt"), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref.Meta.SessionID != "conv-real" {
+		t.Errorf("located %q, want the conversation recording the prompt", ref.Meta.SessionID)
+	}
+}
+
+func TestLocateByIDAntigravity(t *testing.T) {
+	p, err := For(agentsummons.Antigravity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	writeConversation(t, root, "conv-1", agyUserInput(t, "hello", runStart), runEnd)
+
+	ref, err := p.LocateByID(context.Background(), "conv-1", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref.Meta.SessionID != "conv-1" {
+		t.Errorf("located %q, want conv-1", ref.Meta.SessionID)
 	}
 }
 

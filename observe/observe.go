@@ -193,6 +193,10 @@ func ObserveSession(ctx context.Context, cfg Config, harnessID agentsummons.ID, 
 	if err != nil {
 		return nil, err
 	}
+	// Validate the spec before spending a harness probe on it.
+	if len(spec.UserSkillDirs) > 0 && !cfg.Sandbox {
+		return nil, fmt.Errorf("observe: user-scope installs require Config.Sandbox (the real user scope is never touched)")
+	}
 	cliVersion, err := harnessVersion(ctx, harnessID)
 	if err != nil {
 		return nil, fmt.Errorf("observe: %s not usable: %w", harnessID, err)
@@ -247,9 +251,6 @@ func ObserveSession(ctx context.Context, cfg Config, harnessID agentsummons.ID, 
 		}
 	}
 	if len(spec.UserSkillDirs) > 0 {
-		if sb == nil {
-			return nil, fmt.Errorf("observe: user-scope installs require Config.Sandbox (the real user scope is never touched)")
-		}
 		if sb.UserSkillDir == "" {
 			return nil, fmt.Errorf("observe: %s's sandbox does not model a user skill scope yet", harnessID)
 		}

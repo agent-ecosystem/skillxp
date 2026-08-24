@@ -2,6 +2,7 @@ package observe
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -115,9 +116,19 @@ func TestObserveSessionUnknownHarness(t *testing.T) {
 	}
 }
 
+// A spec that cannot run must fail before the harness is touched at all —
+// not even the version probe.
 func TestUserSkillsRequireSandbox(t *testing.T) {
 	var calls []agentsummons.Request
 	stubHarness(t, "2.1.205", fakeClaudeCode(t, &calls))
+	probes := 0
+	prev := harnessVersion
+	t.Cleanup(func() { harnessVersion = prev })
+	harnessVersion = func(ctx context.Context, id agentsummons.ID) (string, error) {
+		probes++
+		return "2.1.205", nil
+	}
+
 	spec := SessionSpec{
 		UserSkillDirs: []string{writeSkill(t)},
 		Turns:         []Turn{{Prompt: "hi"}},
@@ -126,8 +137,8 @@ func TestUserSkillsRequireSandbox(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "Config.Sandbox") {
 		t.Errorf("err = %v, want sandbox requirement", err)
 	}
-	if len(calls) != 0 {
-		t.Errorf("harness invoked %d times before validation failed", len(calls))
+	if probes != 0 || len(calls) != 0 {
+		t.Errorf("harness touched before validation failed: %d probes, %d invocations", probes, len(calls))
 	}
 }
 
@@ -222,6 +233,93 @@ func TestObserveSessionPipeline(t *testing.T) {
 	// The first turn's path points into the (now removed) fixture store.
 	if _, err := os.Stat(so.Turns[0].TranscriptPath); !os.IsNotExist(err) {
 		t.Errorf("fixture transcript still on disk after teardown: %v", err)
+	}
+}
+
+// agyUserInput renders an antigravity USER_INPUT step carrying the prompt.
+func agyUserInput(t *testing.T, prompt string, ts time.Time) string {
+	t.Helper()
+	record, err := json.Marshal(map[string]any{
+		"step_index": 0,
+		"source":     "USER_EXPLICIT",
+		"type":       "USER_INPUT",
+		"status":     "DONE",
+		"created_at": ts.UTC().Format(time.RFC3339),
+		"content":    "<USER_REQUEST>\n" + prompt + "\n</USER_REQUEST>",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(record) + "\n"
+}
+
+// TestObserveSessionAntigravityFallbacks drives the pipeline against a fake
+// antigravity: no preset session identity, attribution by time window, the
+// session ID recovered from the conversation directory (ref.Meta), and the
+// harness version stamped from the CLI version hint.
+func TestObserveSessionAntigravityFallbacks(t *testing.T) {
+	// Antigravity's sandbox clones a seed home; plant one under a fake HOME.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // windows
+	seed := filepath.Join(home, ".skillxp", "seeds", "antigravity", "home", ".gemini")
+	if err := os.MkdirAll(seed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(seed, "token"), []byte("tok"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var calls []agentsummons.Request
+	stubHarness(t, "1.1.9", func(ctx context.Context, req agentsummons.Request) (*agentsummons.Result, error) {
+		calls = append(calls, req)
+		sandboxHome := extraEnvValue(req, "HOME")
+		if sandboxHome == "" {
+			t.Error("invoke: no HOME override in request env")
+		}
+		now := time.Now()
+		path := filepath.Join(sandboxHome, ".gemini", "antigravity-cli", "brain",
+			"conv-1", ".system_generated", "logs", "transcript_full.jsonl")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(path, []byte(agyUserInput(t, req.Prompt, now)), 0o644); err != nil {
+			return nil, err
+		}
+		return &agentsummons.Result{
+			Harness:     req.Harness,
+			Argv:        []string{"agy", req.Prompt},
+			PromptIndex: 1,
+			Workdir:     req.Workdir,
+			Start:       now.Add(-time.Second),
+			End:         now.Add(time.Second),
+			ExitCode:    0,
+		}, nil
+	})
+
+	spec := Spec{Prompt: "measure the skill", Activation: true}
+	obs, err := Observe(context.Background(), Config{Sandbox: true}, agentsummons.Antigravity, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(calls) != 1 {
+		t.Fatalf("harness invoked %d times, want 1", len(calls))
+	}
+	if !calls[0].AutoApprove {
+		t.Error("antigravity activation turn must set AutoApprove")
+	}
+	if calls[0].SessionID != "" {
+		t.Errorf("antigravity got preset SessionID %q; identity is discovered, never preset", calls[0].SessionID)
+	}
+	if obs.SessionID != "conv-1" {
+		t.Errorf("session id = %q, want the conversation directory name conv-1", obs.SessionID)
+	}
+	if obs.HarnessVersion != "1.1.9" {
+		t.Errorf("harness version = %q, want the CLI version hint", obs.HarnessVersion)
+	}
+	if len(obs.Session.Events) == 0 {
+		t.Error("observation carries no parsed session")
 	}
 }
 
