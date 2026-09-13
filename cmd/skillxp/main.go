@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -53,7 +54,7 @@ func run(args []string) error {
 	}
 	switch args[0] {
 	case "harnesses":
-		return harnesses()
+		return harnesses(os.Stdout)
 	case "observe":
 		return observeCmd(args[1:])
 	case "version", "-version", "--version":
@@ -71,7 +72,8 @@ func run(args []string) error {
 func usage() {
 	fmt.Fprint(os.Stderr, `Usage:
   skillxp harnesses
-      Show supported harnesses and their skill install locations.
+      Show supported harnesses, the harness versions this release was
+      validated against, and their skill install locations.
 
   skillxp version
       Print the skillxp version.
@@ -99,13 +101,21 @@ Observe flags:
 `)
 }
 
-func harnesses() error {
+func harnesses(w io.Writer) error {
 	for _, p := range profile.Profiles() {
 		injected := "records injected context"
 		if !p.RecordsInjectedContext {
 			injected = "does NOT record injected context (evidence is inference)"
 		}
-		fmt.Printf("%-14s project skills: %-16s %s\n", p.Harness, p.ProjectSkillDir, injected)
+		// Coverage documentation, not a compatibility bound: newer harness
+		// releases usually keep working (see agentsummons.LastValidated).
+		validated := agentsummons.LastValidated[p.Harness]
+		if validated == "" {
+			validated = "unknown"
+		}
+		if _, err := fmt.Fprintf(w, "%-14s validated %-9s project skills: %-16s %s\n", p.Harness, validated, p.ProjectSkillDir, injected); err != nil {
+			return err
+		}
 	}
 	return nil
 }

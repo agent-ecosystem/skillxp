@@ -6,6 +6,13 @@ tag). Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `skillxp harnesses` now prints the harness version each release was
+  validated against (from agentsummons' `LastValidated` table), so the
+  numbers update automatically with dependency bumps. The README points
+  there instead of hardcoding versions that went stale.
+
 ## [0.1.3] - 2026-09-13
 
 ### Changed

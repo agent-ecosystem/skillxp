@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -50,6 +51,31 @@ func TestRunDispatch(t *testing.T) {
 	} {
 		if err := run(args); err != nil {
 			t.Errorf("run(%v): %v", args, err)
+		}
+	}
+}
+
+func TestHarnessesListsValidatedVersions(t *testing.T) {
+	var buf bytes.Buffer
+	if err := harnesses(&buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, p := range profile.Profiles() {
+		want := "validated " + agentsummons.LastValidated[p.Harness]
+		line := ""
+		for _, l := range strings.Split(out, "\n") {
+			if strings.HasPrefix(l, string(p.Harness)) {
+				line = l
+				break
+			}
+		}
+		if line == "" {
+			t.Errorf("%s: no output line", p.Harness)
+			continue
+		}
+		if !strings.Contains(line, want) {
+			t.Errorf("%s: line %q missing %q", p.Harness, line, want)
 		}
 	}
 }

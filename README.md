@@ -23,9 +23,12 @@ loading benchmark, whose checks and verdict logic live in that repo's
 
 ## Status
 
-Early development. Supported harnesses (validated versions): Antigravity
-CLI 1.1.4, Claude Code 2.1.205, Codex CLI 0.144.6. Results reflect
-**headless** behavior, which may differ from interactive use.
+Early development. Supported harnesses: Antigravity CLI, Claude Code,
+and Codex CLI. Run `skillxp harnesses` to see the harness versions your
+installed release was validated against (newer harness releases usually
+keep working; validation records coverage, not a compatibility bound).
+Results reflect **headless** behavior, which may differ from
+interactive use.
 
 ## Install
 
