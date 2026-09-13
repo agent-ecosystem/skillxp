@@ -6,12 +6,21 @@ tag). Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-09-13
+
 ### Changed
 
 - `observe.ObserveSession` now rejects a spec with user-scope skill
   installs but no `Config.Sandbox` before probing the harness, so the
   misconfiguration surfaces as the sandbox-requirement error even when
   the harness is not installed (previously the not-usable error won).
+- Bumped agentsummons to v0.3.3 and agentminutes to v0.5.0:
+  agentsummons revalidated its flag surface against antigravity 1.2.2 /
+  claude-code 2.1.236 / codex 0.154.0 (with new antigravity headless
+  caveats around `denied_actions`, the stderr `error:` marker, and
+  `--print-timeout` truncation), and agentminutes made subagent
+  sessions first-class for all three harnesses (codex multi-agent
+  rollouts parse fully with `is_subagent`/`subagent_id` metadata).
 
 ## [0.1.2] - 2026-08-24
 

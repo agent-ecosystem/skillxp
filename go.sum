@@ -1,4 +1,4 @@
-github.com/agent-ecosystem/agentminutes v0.4.0 h1:gpXUTdDaPRJZMoOwqXBTRlfQXVJjt/I96euzRVswnHw=
-github.com/agent-ecosystem/agentminutes v0.4.0/go.mod h1:PPu/5khJu5u5EoOXGQKAATPfQnnpVchSpsJshKITHvk=
-github.com/agent-ecosystem/agentsummons v0.3.2 h1:S+Au//i1De9t7ECH/wuvf/mspbhSVmRTuCbaJ3q0mBQ=
-github.com/agent-ecosystem/agentsummons v0.3.2/go.mod h1:fLKz+G0kl1lojOQUHZt8Yno/NF+f0FsRiMm4yJ11sJQ=
+github.com/agent-ecosystem/agentminutes v0.5.0 h1:v87ZamvxAmNb17WnnA426tQxJvnMEdDTBgN3AeqLV/k=
+github.com/agent-ecosystem/agentminutes v0.5.0/go.mod h1:J+e9H7DI94cBWTXQ6aG3BeJKNRhzjT1SEgL/klYWk8Q=
+github.com/agent-ecosystem/agentsummons v0.3.3 h1:AD3bCIllD24nJ1oBUP8UwyVUSOZD08cot8N0wa82yaw=
+github.com/agent-ecosystem/agentsummons v0.3.3/go.mod h1:fLKz+G0kl1lojOQUHZt8Yno/NF+f0FsRiMm4yJ11sJQ=
