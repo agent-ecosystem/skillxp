@@ -142,6 +142,19 @@ type Observation struct {
 	Ref     harness.SessionRef   `json:"-"`
 }
 
+// TranscriptError reports that a turn ran but its transcript could not be
+// located or parsed the way the harness profile expects. It separates
+// "the profile's transcript lore did not hold" from "the invocation
+// failed", which is the distinction the drift probe grades on.
+type TranscriptError struct {
+	Stage string // "locate" or "parse"
+	Err   error
+}
+
+func (e *TranscriptError) Error() string { return e.Stage + ": " + e.Err.Error() }
+
+func (e *TranscriptError) Unwrap() error { return e.Err }
+
 // SessionObservation is a completed multi-turn experiment.
 type SessionObservation struct {
 	Harness   string `json:"harness"`
@@ -325,7 +338,7 @@ func runTurn(ctx context.Context, cfg Config, p profile.Profile, cliVersion, pro
 		ref, err = p.LocateByID(ctx, sessionID, root)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("locate: %w", err)
+		return nil, &TranscriptError{Stage: "locate", Err: err}
 	}
 
 	sess, err := parseWhenTurnRecorded(ctx, p, cliVersion, ref.Path, turn.Prompt)
@@ -375,9 +388,9 @@ func parseWhenTurnRecorded(ctx context.Context, p profile.Profile, cliVersion, p
 		}
 		if time.Now().After(deadline) {
 			if err != nil {
-				return nil, fmt.Errorf("parse: %w", err)
+				return nil, &TranscriptError{Stage: "parse", Err: err}
 			}
-			return nil, fmt.Errorf("parse: transcript %s never recorded the turn's prompt", path)
+			return nil, &TranscriptError{Stage: "parse", Err: fmt.Errorf("transcript %s never recorded the turn's prompt", path)}
 		}
 		select {
 		case <-ctx.Done():

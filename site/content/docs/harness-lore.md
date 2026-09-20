@@ -6,8 +6,10 @@ weight: 600
 ---
 
 Everything below was established empirically, and it is the kind of
-knowledge this tool exists to own once. Each `profile` cites the harness
-version it was validated against.
+knowledge this tool exists to own once. Each `profile` field cites the
+harness version it was established on, and `profile.LastValidated` (shown
+by `skillxp harnesses`, compared by `skillxp doctor`) records the release
+the whole profile was last re-confirmed on.
 
 ## Discovery and activation
 

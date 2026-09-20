@@ -61,8 +61,9 @@ type Profile struct {
 	LocateSlack time.Duration
 }
 
-// Profiles returns the supported harness profiles, alphabetical. Validated
-// against: antigravity 1.1.4, claude-code 2.1.205, codex 0.144.6.
+// Profiles returns the supported harness profiles, alphabetical. Each field
+// cites the release it was established on; LastValidated records the
+// release the whole profile was last re-confirmed on by the drift probe.
 func Profiles() []Profile {
 	return []Profile{
 		{
@@ -70,11 +71,11 @@ func Profiles() []Profile {
 			ProjectSkillDir: filepath.Join(".agents", "skills"),
 			// Validated 1.1.9 (2026-08-01): global skills live at
 			// ~/.gemini/config/skills, per the docs and confirmed by
-			// listing probes. The 1.1.4-era locations
-			// (~/.gemini/antigravity-cli/skills, ~/.gemini/skills) exist
-			// on disk but no longer reach the listing, and a HOME-level
-			// .agents/skills never worked — the .agents root is
-			// project-only.
+			// listing probes; re-confirmed live on 1.2.7 (2026-09-20). The
+			// 1.1.4-era locations (~/.gemini/antigravity-cli/skills,
+			// ~/.gemini/skills) exist on disk but no longer reach the listing,
+			// and a HOME-level .agents/skills never worked — the .agents root
+			// is project-only.
 			UserSkillDir:           filepath.Join(".gemini", "config", "skills"),
 			SkillListingSubtypes:   nil,
 			EchoSubtypes:           map[string]bool{"user_input_context": true, "conversation_history": true, "checkpoint": true},
@@ -304,9 +305,10 @@ func (p Profile) Locate(ctx context.Context, res *agentsummons.Result, root stri
 // LocateByID resolves a known session ID to its transcript, waiting
 // briefly for the harness to flush. root overrides the default transcript
 // root; empty means the default. Resume turns append to the same session
-// on every supported harness (validated: claude-code 2.1.205, codex
-// 0.144.6, antigravity 1.1.4), so a follow-up turn's transcript is always
-// reachable by the opening turn's ID.
+// on every supported harness (established on claude-code 2.1.205, codex
+// 0.144.6, antigravity 1.1.4; re-confirmed by the drift probe's resume
+// check through LastValidated), so a follow-up turn's transcript is
+// always reachable by the opening turn's ID.
 func (p Profile) LocateByID(ctx context.Context, sessionID, root string) (harness.SessionRef, error) {
 	l, err := agentminutes.LocatorFor(harness.ID(p.Harness))
 	if err != nil {

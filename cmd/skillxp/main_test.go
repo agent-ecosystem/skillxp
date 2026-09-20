@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -62,7 +64,8 @@ func TestHarnessesListsValidatedVersions(t *testing.T) {
 	}
 	out := buf.String()
 	for _, p := range profile.Profiles() {
-		want := "validated " + agentsummons.LastValidated[p.Harness]
+		want := "validated " + profile.LastValidated[p.Harness]
+		wantFlags := "flags " + agentsummons.LastValidated[p.Harness]
 		line := ""
 		for _, l := range strings.Split(out, "\n") {
 			if strings.HasPrefix(l, string(p.Harness)) {
@@ -77,7 +80,126 @@ func TestHarnessesListsValidatedVersions(t *testing.T) {
 		if !strings.Contains(line, want) {
 			t.Errorf("%s: line %q missing %q", p.Harness, line, want)
 		}
+		if !strings.Contains(line, wantFlags) {
+			t.Errorf("%s: line %q missing %q", p.Harness, line, wantFlags)
+		}
 	}
+}
+
+// stubVersion fakes only the version seam, per harness.
+func stubVersion(t *testing.T, versions map[agentsummons.ID]string, errs map[agentsummons.ID]error) {
+	t.Helper()
+	prev := invoker.Version
+	t.Cleanup(func() { invoker.Version = prev })
+	invoker.Version = func(ctx context.Context, id agentsummons.ID) (string, error) {
+		if err := errs[id]; err != nil {
+			return "", err
+		}
+		return versions[id], nil
+	}
+}
+
+func TestDoctor(t *testing.T) {
+	validated := profile.LastValidated
+	t.Run("clean", func(t *testing.T) {
+		stubVersion(t, validated, nil)
+		var buf bytes.Buffer
+		if err := doctor(&buf); err != nil {
+			t.Fatalf("err = %v\n%s", err, buf.String())
+		}
+		for _, p := range profile.Profiles() {
+			if !strings.Contains(buf.String(), string(p.Harness)+" ") || !strings.Contains(buf.String(), "installed "+validated[p.Harness]+", validated "+validated[p.Harness]+" — clean") {
+				t.Errorf("%s: no clean line in:\n%s", p.Harness, buf.String())
+			}
+		}
+	})
+	t.Run("drift candidate exits 1", func(t *testing.T) {
+		versions := map[agentsummons.ID]string{}
+		for id, v := range validated {
+			versions[id] = v
+		}
+		versions[agentsummons.Codex] = "999.0.0"
+		stubVersion(t, versions, nil)
+		var buf bytes.Buffer
+		err := doctor(&buf)
+		var ee exitError
+		if !errors.As(err, &ee) || ee.code != exitDoctorDrift {
+			t.Errorf("err = %v, want exit 1", err)
+		}
+		if !strings.Contains(buf.String(), "codex        installed 999.0.0 > validated "+validated[agentsummons.Codex]+" — drift candidate; run `skillxp drift probe`") {
+			t.Errorf("report:\n%s", buf.String())
+		}
+	})
+	t.Run("missing harness is clean, probe failure exits 2", func(t *testing.T) {
+		stubVersion(t, validated, map[agentsummons.ID]error{
+			agentsummons.Antigravity: &agentsummons.NotInstalledError{Harness: agentsummons.Antigravity, Binary: "agy", Err: errors.New("nope")},
+			agentsummons.Codex:       errors.New("version command hung"),
+		})
+		var buf bytes.Buffer
+		err := doctor(&buf)
+		var ee exitError
+		if !errors.As(err, &ee) || ee.code != exitDoctorProbeFailed {
+			t.Errorf("err = %v, want exit 2", err)
+		}
+		if !strings.Contains(buf.String(), "antigravity  not installed") || !strings.Contains(buf.String(), "codex        version probe failed: version command hung") {
+			t.Errorf("report:\n%s", buf.String())
+		}
+	})
+}
+
+func TestDriftCmd(t *testing.T) {
+	t.Run("requires the probe verb", func(t *testing.T) {
+		if err := driftCmd(io.Discard, nil); err == nil || !strings.Contains(err.Error(), "drift probe") {
+			t.Errorf("err = %v", err)
+		}
+		if err := driftCmd(io.Discard, []string{"scan"}); err == nil {
+			t.Error("unknown verb: want error")
+		}
+	})
+	t.Run("rejects unknown harness", func(t *testing.T) {
+		err := driftCmd(io.Discard, []string{"probe", "-harness", "nope"})
+		if err == nil || !strings.Contains(err.Error(), "unsupported harness") {
+			t.Errorf("err = %v", err)
+		}
+	})
+	t.Run("clean probe exits 0", func(t *testing.T) {
+		t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-fake")
+		stubVersion(t, map[agentsummons.ID]string{agentsummons.ClaudeCode: "99.0.0"}, nil)
+		prev := invoker.Run
+		t.Cleanup(func() { invoker.Run = prev })
+		var calls []agentsummons.Request
+		invoker.Run = harnesstest.FakeClaudeCodeWith(t, &calls, harnesstest.Behavior{Listing: true, Reply: harnesstest.ActivateReply})
+		var buf bytes.Buffer
+		if err := driftCmd(&buf, []string{"probe", "-harness", "claude-code"}); err != nil {
+			t.Fatalf("err = %v\n%s", err, buf.String())
+		}
+		if !strings.Contains(buf.String(), "clean: claude-code at 99.0.0") {
+			t.Errorf("report:\n%s", buf.String())
+		}
+	})
+	t.Run("drift exits 1", func(t *testing.T) {
+		t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-fake")
+		stubVersion(t, map[agentsummons.ID]string{agentsummons.ClaudeCode: "99.0.0"}, nil)
+		prev := invoker.Run
+		t.Cleanup(func() { invoker.Run = prev })
+		var calls []agentsummons.Request
+		invoker.Run = harnesstest.FakeClaudeCodeWith(t, &calls, harnesstest.Behavior{Listing: false, Reply: harnesstest.ActivateReply})
+		err := driftCmd(io.Discard, []string{"probe", "-harness", "claude-code"})
+		var ee exitError
+		if !errors.As(err, &ee) || ee.code != 1 {
+			t.Errorf("err = %v, want exit 1", err)
+		}
+	})
+	t.Run("explicitly named missing harness exits 3", func(t *testing.T) {
+		stubVersion(t, nil, map[agentsummons.ID]error{
+			agentsummons.Codex: &agentsummons.NotInstalledError{Harness: agentsummons.Codex, Binary: "codex", Err: errors.New("nope")},
+		})
+		err := driftCmd(io.Discard, []string{"probe", "-harness", "codex"})
+		var ee exitError
+		if !errors.As(err, &ee) || ee.code != 3 {
+			t.Errorf("err = %v, want exit 3", err)
+		}
+	})
 }
 
 func TestObserveFlagValidation(t *testing.T) {

@@ -19,6 +19,10 @@ import (
 //
 // claude-code additionally needs CLAUDE_CODE_OAUTH_TOKEN (see
 // profile.PrepareSandbox); other harnesses need their sandbox seeds.
+//
+// This is the cheapest single sanity check (one project-scope turn). The
+// full check of a profile's lore, user scope and resume included, is
+// `skillxp drift probe` (internal/driftprobe; see DEVELOPMENT.md).
 func TestLiveSmoke(t *testing.T) {
 	harnessID := os.Getenv("SKILLXP_E2E")
 	if harnessID == "" {

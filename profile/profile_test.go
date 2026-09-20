@@ -398,3 +398,22 @@ func TestResolvePathFallsBack(t *testing.T) {
 		t.Errorf("resolvePath(%q) = %q, want the input back", missing, got)
 	}
 }
+
+// TestLastValidatedCoversProfiles keeps LastValidated in step with
+// Profiles: every harness the runner knows must record the release its
+// lore was last re-confirmed on, and the table must not name harnesses
+// the runner does not support.
+func TestLastValidatedCoversProfiles(t *testing.T) {
+	known := map[agentsummons.ID]bool{}
+	for _, p := range Profiles() {
+		known[p.Harness] = true
+		if LastValidated[p.Harness] == "" {
+			t.Errorf("harness %q has no LastValidated entry", p.Harness)
+		}
+	}
+	for id := range LastValidated {
+		if !known[id] {
+			t.Errorf("LastValidated names %q, which has no profile", id)
+		}
+	}
+}

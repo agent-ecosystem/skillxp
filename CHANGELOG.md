@@ -6,8 +6,37 @@ tag). Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `profile.LastValidated`: the release each harness profile's skill lore
+  was last re-confirmed on, the third validation axis next to
+  agentsummons' flag surface and agentminutes' transcript format. A
+  registry test keeps it in step with the profile list.
+- `skillxp doctor`: installed harness versions against
+  `profile.LastValidated`, mirroring `agentsummons doctor` (free; exit 1
+  on a drift candidate, 2 on a failed version probe).
+- `skillxp drift probe` (maintainer-only, spends tokens): re-runs the
+  sandboxed project-scope, user-scope, and resume skill-loading
+  experiments against the installed release and grades the profile's
+  lore, with the version gate, one-shot retry, drift-vs-inconclusive
+  split, and exit codes (0/1/2/3) of agentminutes' drift devtool. See
+  DEVELOPMENT.md.
+- `observe.TranscriptError`: a typed error for a turn whose transcript
+  could not be located or parsed as the profile expects, distinct from a
+  failed invocation.
+
 ### Changed
 
+- `skillxp harnesses` now prints both validation axes per harness
+  (`validated`, the skill lore; `flags`, the agentsummons flag surface).
+- Bumped agentsummons to v0.3.4 and agentminutes to v0.5.1: both
+  revalidated against antigravity 1.2.7 / claude-code 2.1.267 / codex
+  0.155.1 (no flag or format surfaces moved for skillxp; agentminutes
+  now parses Claude Code `cost-state` records as `system` events, and
+  agentsummons documents antigravity 1.2.6's unlimited `--print-timeout`
+  default and `AGY_ERROR` exit 3). Skill discovery at project and user
+  scope, skill-listing evidence, and resume attribution were re-confirmed
+  live on those same harness versions; no profile changes were needed.
 - `skillxp harnesses` now prints the harness version each release was
   validated against (from agentsummons' `LastValidated` table), so the
   numbers update automatically with dependency bumps. The README points

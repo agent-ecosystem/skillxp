@@ -1,26 +1,53 @@
 ---
 title: CLI
-description: The harnesses and observe commands, the observation bundle, and the trace report.
+description: The harnesses, doctor, and observe commands, the observation bundle, and the trace report.
 icon: terminal
 weight: 300
 ---
 
 ## skillxp harnesses
 
-To see where each supported harness discovers project-level skills, use
+To see where each supported harness discovers project-level skills, and
+which harness releases this build was validated against, use
 `harnesses`:
 
 ```sh
 $ skillxp harnesses
-antigravity    project skills: .agents/skills   does NOT record injected context (evidence is inference)
-claude-code    project skills: .claude/skills   records injected context
-codex          project skills: .codex/skills    records injected context
+antigravity    validated 1.2.7     flags 1.2.7     project skills: .agents/skills   does NOT record injected context (evidence is inference)
+claude-code    validated 2.1.267   flags 2.1.267   project skills: .claude/skills   records injected context
+codex          validated 0.155.1   flags 0.155.1   project skills: .codex/skills    records injected context
 ```
+
+`validated` is the newest release each harness's skill lore (discovery
+locations, listing evidence, resume behavior) was re-confirmed on;
+`flags` is the release the underlying
+[agentsummons](https://agentsummons.dev) flag surface was validated on.
+Both record coverage, not a compatibility bound: newer releases usually
+keep working.
 
 The injected-context column matters for reading results: on a harness
 that records injected context, discovery evidence is direct; on
 antigravity, it is behavioral inference. See
 [Harness Lore](/docs/harness-lore/).
+
+## skillxp doctor
+
+To compare the harness versions you have installed against the validated
+ones, use `doctor`. It is free: nothing runs beyond each harness's
+version command.
+
+```sh
+$ skillxp doctor
+antigravity  installed 1.2.7, validated 1.2.7 — clean
+claude-code  installed 2.1.267, validated 2.1.267 — clean
+codex        installed 0.157.0 > validated 0.155.1 — drift candidate; run `skillxp drift probe` to revalidate
+```
+
+A drift candidate is a statement about validation coverage, not a
+failure: observations still run, and a moved skill directory fails
+loudly (the skill never loads) rather than going unnoticed. The exit code makes
+`doctor` usable as a gate: 0 clean (harnesses that are not installed do
+not count), 1 at least one drift candidate, 2 a version probe failed.
 
 ## skillxp observe
 

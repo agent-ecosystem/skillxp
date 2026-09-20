@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -18,6 +19,8 @@ import (
 	"time"
 
 	"github.com/agent-ecosystem/agentsummons"
+	"github.com/agent-ecosystem/skillxp/internal/driftprobe"
+	"github.com/agent-ecosystem/skillxp/internal/invoker"
 	"github.com/agent-ecosystem/skillxp/observe"
 	"github.com/agent-ecosystem/skillxp/profile"
 	"github.com/agent-ecosystem/skillxp/trace"
@@ -42,10 +45,21 @@ func cliVersion() string {
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
+		var ee exitError
+		if errors.As(err, &ee) {
+			// The report already said everything.
+			os.Exit(ee.code)
+		}
 		fmt.Fprintln(os.Stderr, "skillxp:", err)
 		os.Exit(1)
 	}
 }
+
+// exitError carries a documented non-zero exit code for a command whose
+// report already explained the outcome; main exits with it silently.
+type exitError struct{ code int }
+
+func (e exitError) Error() string { return fmt.Sprintf("exit status %d", e.code) }
 
 func run(args []string) error {
 	if len(args) == 0 {
@@ -55,6 +69,12 @@ func run(args []string) error {
 	switch args[0] {
 	case "harnesses":
 		return harnesses(os.Stdout)
+	case "doctor":
+		return doctor(os.Stdout)
+	case "drift":
+		// Maintainer tooling, deliberately absent from usage (see
+		// DEVELOPMENT.md): it spends real tokens on every probed harness.
+		return driftCmd(os.Stdout, args[1:])
 	case "observe":
 		return observeCmd(args[1:])
 	case "version", "-version", "--version":
@@ -72,8 +92,16 @@ func run(args []string) error {
 func usage() {
 	fmt.Fprint(os.Stderr, `Usage:
   skillxp harnesses
-      Show supported harnesses, the harness versions this release was
-      validated against, and their skill install locations.
+      Show supported harnesses, the harness versions this release's
+      skill lore and flag surface were validated against, and their
+      skill install locations.
+
+  skillxp doctor
+      Compare each installed harness version against the version this
+      release's skill lore was validated on (free; nothing is invoked
+      beyond the harnesses' version commands). A newer installed release
+      is a drift candidate, not a failure. Exit 0 clean, 1 drift
+      candidate, 2 a version probe failed.
 
   skillxp version
       Print the skillxp version.
@@ -107,17 +135,106 @@ func harnesses(w io.Writer) error {
 		if !p.RecordsInjectedContext {
 			injected = "does NOT record injected context (evidence is inference)"
 		}
-		// Coverage documentation, not a compatibility bound: newer harness
-		// releases usually keep working (see agentsummons.LastValidated).
-		validated := agentsummons.LastValidated[p.Harness]
-		if validated == "" {
-			validated = "unknown"
-		}
-		if _, err := fmt.Fprintf(w, "%-14s validated %-9s project skills: %-16s %s\n", p.Harness, validated, p.ProjectSkillDir, injected); err != nil {
+		// Two validation axes, both coverage documentation rather than a
+		// compatibility bound (newer harness releases usually keep working):
+		// this release's skill lore (profile.LastValidated) and the flag
+		// surface it invokes through (agentsummons.LastValidated).
+		lore := orUnknown(profile.LastValidated[p.Harness])
+		flags := orUnknown(agentsummons.LastValidated[p.Harness])
+		if _, err := fmt.Fprintf(w, "%-14s validated %-9s flags %-9s project skills: %-16s %s\n", p.Harness, lore, flags, p.ProjectSkillDir, injected); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// doctor's exit codes; the worst one seen wins.
+const (
+	exitDoctorDrift       = 1
+	exitDoctorProbeFailed = 2
+)
+
+// versionProbeTimeout bounds each harness's version command; these are
+// free, local invocations that should never take long.
+const versionProbeTimeout = 30 * time.Second
+
+// doctor mirrors `agentsummons doctor` for the skill-lore axis: installed
+// version against profile.LastValidated, per harness.
+func doctor(w io.Writer) error {
+	worst := 0
+	for _, p := range profile.Profiles() {
+		validated := profile.LastValidated[p.Harness]
+		ctx, cancel := context.WithTimeout(context.Background(), versionProbeTimeout)
+		installed, err := invoker.Version(ctx, p.Harness)
+		cancel()
+		var nie *agentsummons.NotInstalledError
+		switch {
+		case errors.As(err, &nie):
+			_, _ = fmt.Fprintf(w, "%-12s not installed\n", p.Harness)
+		case err != nil:
+			_, _ = fmt.Fprintf(w, "%-12s version probe failed: %v\n", p.Harness, err)
+			worst = max(worst, exitDoctorProbeFailed)
+		case agentsummons.VersionNewer(installed, validated):
+			_, _ = fmt.Fprintf(w, "%-12s installed %s > validated %s — drift candidate; run `skillxp drift probe` to revalidate\n", p.Harness, installed, validated)
+			worst = max(worst, exitDoctorDrift)
+		default:
+			_, _ = fmt.Fprintf(w, "%-12s installed %s, validated %s — clean\n", p.Harness, installed, validated)
+		}
+	}
+	if worst != 0 {
+		return exitError{worst}
+	}
+	return nil
+}
+
+// driftCmd is `skillxp drift probe`: the maintainer-only revalidation of
+// each harness profile's lore against the installed release. Exit codes
+// follow agentminutes' drift devtool: 0 clean, 1 drift, 2 inconclusive,
+// 3 execution error.
+func driftCmd(w io.Writer, args []string) error {
+	if len(args) == 0 || args[0] != "probe" {
+		return fmt.Errorf("drift: usage: skillxp drift probe [-harness id,...] [-force] [-keep] [-timeout d]")
+	}
+	fs := flag.NewFlagSet("drift probe", flag.ContinueOnError)
+	harnessList := fs.String("harness", "", "harnesses to probe, comma-separated (default all)")
+	force := fs.Bool("force", false, "probe even when the installed version equals the last validated one")
+	keep := fs.Bool("keep", false, "keep the probes' transcripts for inspection")
+	timeout := fs.Duration("timeout", driftprobe.DefaultTimeout, "per-invocation timeout")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	var ids []agentsummons.ID
+	explicit := *harnessList != ""
+	if explicit {
+		for _, name := range strings.Split(*harnessList, ",") {
+			id := agentsummons.ID(strings.TrimSpace(name))
+			if _, err := profile.For(id); err != nil {
+				return err
+			}
+			ids = append(ids, id)
+		}
+	} else {
+		for _, p := range profile.Profiles() {
+			ids = append(ids, p.Harness)
+		}
+	}
+	cat := driftprobe.RunProbes(context.Background(), w, ids, driftprobe.DefaultProbes(), driftprobe.Options{
+		Force:                *force,
+		Keep:                 *keep,
+		Timeout:              *timeout,
+		MissingBinaryIsError: explicit,
+	})
+	if code := cat.ExitCode(); code != 0 {
+		return exitError{code}
+	}
+	return nil
+}
+
+func orUnknown(v string) string {
+	if v == "" {
+		return "unknown"
+	}
+	return v
 }
 
 func observeCmd(args []string) error {

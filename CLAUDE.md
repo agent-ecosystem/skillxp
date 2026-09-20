@@ -17,6 +17,17 @@ npm test --prefix wrappers/npm
 python3 -m unittest discover -s wrappers/pypi/tests
 ```
 
+## Drift
+
+Harness skill lore (`profile/`) moves with harness releases without warning.
+`profile.LastValidated` records the release each profile was last
+re-confirmed on (the third axis next to agentsummons' flag surface and
+agentminutes' transcript format). `skillxp doctor` is the free gate;
+`skillxp drift probe` (maintainer-only, spends tokens, sandboxed) re-runs
+the discovery, listing, and resume experiments and grades drift vs
+inconclusive. Reconcile per `DEVELOPMENT.md`: fix the profile, bump the
+table, note it in the changelog.
+
 ## Releasing
 
 Follow the checklist in `DEVELOPMENT.md`. Version bumps touch more than
