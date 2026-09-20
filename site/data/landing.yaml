@@ -15,7 +15,7 @@ hero:
   template: hero
 
   badge:
-    text: v0.1.3
+    text: v0.2.0
     color: primary
     pill: false
     soft: true
