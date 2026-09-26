@@ -31,15 +31,32 @@ the whole profile was last re-confirmed on.
   `<skill-context>` block and recorded, frontmatter stripped, as the
   text of a `skill.invoked` record. Same spec, different vehicle,
   different author-facing result.
+- Copilot's `<skill-context>` block is more than tags: its opening lines
+  state the skill's base directory and list every file under the skill
+  directory, recursively and unfiltered (nonstandard directories and
+  files the body never mentions included), so the model learns of
+  bundled files by name at activation. No other harness enumerates. The
+  copilot profile parses in agentminutes' delivered text form so the
+  tags and the list are in the traced text; the drift probe stages a
+  bundled file and holds copilot to listing it.
+- Copilot does not deduplicate reactivation. Activating a skill again
+  with its body unchanged delivers the block again but logs it by
+  reference (`skill.invoked_ref`: content hash, no body), which
+  agentminutes resolves to the earlier body, so the second delivery
+  traces as `harness-injected` like the first. An edited body logs a
+  full `skill.invoked` instead.
 
 ## Transcripts and evidence
 
 - Copilot records the system prompt on a session's opening turn (a
   resumed run records none), and its `<available_skills>` block is the
   discovery listing (`system.message`). The delivered skill body is the
-  text of the `skill.invoked` record, byte-exact what the harness's own
-  `skill.context_delivered_ref` hashes as delivered, so a phrase traced
-  from the body is `harness-injected` evidence, as on claude-code.
+  text of the `skill.invoked` record (or `skill.invoked_ref` on a repeat
+  activation), byte-exact what the harness's own
+  `skill.context_delivered_ref` hashes as delivered and wrapped in the
+  `<skill-context>` block it records, so a phrase traced from the body
+  is `harness-injected` evidence, as on claude-code, on every
+  activation.
 - Antigravity transcripts record no injected context, so discovery
   evidence there is behavioral inference. One `agy -p` invocation also
   writes **two** conversations (a warm-up plus the real one), so

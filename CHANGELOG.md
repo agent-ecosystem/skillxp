@@ -6,6 +6,33 @@ tag). Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `profile.TextForm`, the agentminutes text form each harness's
+  transcript is parsed in, passed through `ParseOptions`. Copilot's is
+  the delivered form: its `<skill-context>` wrapper is content the
+  model acts on (the tags a content-wrapping check looks for, the
+  skill's base directory, and a list of every file under the skill
+  directory), and the bare form drops the tags.
+- `profile.EnumeratesBundledFiles`, the lore that a harness lists a
+  skill's bundled files in the context it delivers with the body
+  (copilot 1.0.88). The drift probe now stages a bundled reference file
+  beside every probe skill and reports drift when a harness that claims
+  enumeration delivers the body without the file's name.
+- The copilot profile's lore on reactivation: a repeat activation with
+  the body unchanged is delivered again but logged by reference
+  (`skill.invoked_ref`), which agentminutes resolves to the earlier
+  body from its next release, so the second delivery traces as
+  `harness-injected` too. Reported in issue #1.
+
+### Changed
+
+- Copilot observations trace the delivered text: a system event for a
+  skill activation carries the `<skill-context>` tags and the file list
+  around the body, where before it carried the body alone. Phrases
+  traced from the body still surface; consumers matching the whole
+  event text against the SKILL.md body see the wrapper now.
+
 ## [0.3.0] - 2026-09-25
 
 ### Added

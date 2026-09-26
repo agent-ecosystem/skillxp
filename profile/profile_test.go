@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agent-ecosystem/agentminutes/harness"
 	"github.com/agent-ecosystem/agentsummons"
 )
 
@@ -48,9 +49,13 @@ func TestProfilesInvariants(t *testing.T) {
 			t.Errorf("%s: nil EchoSubtypes (trace callers index it unconditionally)", p.Harness)
 		}
 		// A harness that records no injected context has no trustworthy
-		// listing location by definition.
+		// listing location by definition, and cannot show what it
+		// enumerated either.
 		if !p.RecordsInjectedContext && len(p.SkillListingSubtypes) > 0 {
 			t.Errorf("%s: claims listing subtypes %v without recording injected context", p.Harness, p.SkillListingSubtypes)
+		}
+		if !p.RecordsInjectedContext && p.EnumeratesBundledFiles {
+			t.Errorf("%s: claims bundled-file enumeration without recording injected context", p.Harness)
 		}
 	}
 }
@@ -177,6 +182,18 @@ func TestParseOptions(t *testing.T) {
 		if !p.RecordsInjectedContext && opts.HarnessVersionHint != "9.9.9" {
 			t.Errorf("%s: version hint = %q, want the CLI version", p.Harness, opts.HarnessVersionHint)
 		}
+		if opts.TextForm != p.TextForm {
+			t.Errorf("%s: text form = %s, want the profile's %s", p.Harness, opts.TextForm, p.TextForm)
+		}
+	}
+	// Copilot's delivery wrapper is content (tags a check looks for, the
+	// file list), so its transcripts are parsed in the delivered form.
+	cp, err := For(agentsummons.Copilot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.TextForm != harness.TextDelivered || !cp.EnumeratesBundledFiles {
+		t.Errorf("copilot: text form %s, enumerates bundled files %v; want delivered and true", cp.TextForm, cp.EnumeratesBundledFiles)
 	}
 }
 

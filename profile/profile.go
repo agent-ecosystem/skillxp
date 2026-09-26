@@ -56,6 +56,24 @@ type Profile struct {
 	// carry inferred confidence at best.
 	RecordsInjectedContext bool
 
+	// TextForm is the agentminutes text form the transcript is parsed in:
+	// which rendering of injected text reports what the model saw on this
+	// harness. TextDelivered where the transcript records a delivery
+	// wrapper that is itself content the model acts on (copilot's
+	// <skill-context>, which tags the body and, per
+	// EnumeratesBundledFiles, lists files; a content-wrapping check looks
+	// for the tags). TextBare (the zero value) elsewhere.
+	TextForm harness.TextForm
+
+	// EnumeratesBundledFiles reports that the harness lists every file
+	// under a skill's directory in the context it delivers with the body,
+	// so a bundled file the SKILL.md never mentions still reaches the
+	// model by name (copilot's <skill-context> "Related files" list,
+	// established 1.0.88). The drift probe stages a bundled file and holds
+	// the harness to it; "no enumeration" evidence on such a harness
+	// means the list is gone, not that the body was raw.
+	EnumeratesBundledFiles bool
+
 	// LocateSlack pads the run's [start, end] window when locating the
 	// transcript by time.
 	LocateSlack time.Duration
@@ -115,10 +133,22 @@ func Profiles() []Profile {
 			// text is the whole prompt). Activation
 			// goes through the `skill` tool: the result is a one-line
 			// confirmation, and the body itself lands in a skill.invoked
-			// record whose text (agentminutes v0.7.0+) is the delivered
-			// SKILL.md body, frontmatter stripped and byte-exact what
-			// skill.context_delivered_ref hashes, so a traced phrase from
-			// the body surfaces as harness-injected, as on claude-code.
+			// record whose text is the delivered SKILL.md body, frontmatter
+			// stripped and byte-exact what skill.context_delivered_ref
+			// hashes, so a traced phrase from the body surfaces as
+			// harness-injected, as on claude-code. The delivery wraps the
+			// body in <skill-context name="..."> tags whose opening lines
+			// state the skill's base directory and list every file under
+			// the skill directory (recursively, unfiltered: nonstandard
+			// directories and files the body never mentions included); the
+			// delivered text form keeps the tags, so a content-wrapping
+			// check sees them, and the bare form would drop them. A repeat
+			// activation with the body unchanged (a resumed turn, or later
+			// in the same session) is delivered again but logged by
+			// reference (skill.invoked_ref: content hash, no body), which
+			// agentminutes resolves to the earlier body, so the second
+			// delivery traces as harness-injected too; reactivation is not
+			// deduplicated. Established 1.0.88.
 			SkillListingSubtypes: []string{"system.message"},
 			// No system subtype replays conversation text: the ones with
 			// text at all are the system prompt, the delivered skill body,
@@ -126,6 +156,8 @@ func Profiles() []Profile {
 			// prompt or the model's answer.
 			EchoSubtypes:           map[string]bool{},
 			RecordsInjectedContext: true,
+			TextForm:               harness.TextDelivered,
+			EnumeratesBundledFiles: true,
 			LocateSlack:            5 * time.Second,
 		},
 	}
@@ -511,10 +543,10 @@ func (p Profile) locateOnce(res *agentsummons.Result, root string) (harness.Sess
 }
 
 // ParseOptions returns the agentminutes options for parsing this harness's
-// transcript. cliVersion is stamped as a hint for formats that record no
-// version in-band (Antigravity).
+// transcript: the profile's text form, and cliVersion as a hint for formats
+// that record no version in-band (Antigravity).
 func (p Profile) ParseOptions(cliVersion string) harness.Options {
-	opts := harness.Options{}
+	opts := harness.Options{TextForm: p.TextForm}
 	if !p.RecordsInjectedContext {
 		opts.HarnessVersionHint = cliVersion
 	}

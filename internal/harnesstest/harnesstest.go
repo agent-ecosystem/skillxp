@@ -6,7 +6,10 @@ package harnesstest
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -77,6 +80,10 @@ type Behavior struct {
 	// Reply produces the assistant's text for a turn, given the skills
 	// discovered; nil answers "done".
 	Reply func(req agentsummons.Request, skills []Skill) string
+
+	// OmitBundledFiles makes the fake copilot's delivery wrapper leave out
+	// the "Related files" list, the lore drift the probe must catch.
+	OmitBundledFiles bool
 }
 
 // ActivateReply answers with the body of the discovered skill the prompt
@@ -235,12 +242,61 @@ func CopilotAssistant(text, id, msgID string, ts time.Time) string {
 		msgID, text, id, copilotStamp(ts)) + "\n"
 }
 
-// CopilotSkillInvoked renders a copilot skill.invoked record, the delivery
-// record a real `skill` tool call leaves: the SKILL.md body with its
-// frontmatter stripped, as the harness hands it to the model.
+// CopilotSkillInvoked renders a copilot skill.invoked record, the record a
+// real `skill` tool call leaves on a skill's first activation: the
+// SKILL.md body with its frontmatter stripped, as the harness hands it to
+// the model.
 func CopilotSkillInvoked(s Skill, id string, ts time.Time) string {
 	return fmt.Sprintf(`{"type":"skill.invoked","data":{"name":%q,"path":%q,"content":%q,"allowedTools":[],"source":"project","trigger":"agent-invoked","model":"claude-sonnet-5","invokedAtTurn":0},"id":%q,"timestamp":%q,"parentId":null}`,
 		s.Name, s.Path, stripFrontmatter(s.Body), id, copilotStamp(ts)) + "\n"
+}
+
+// CopilotSkillInvokedRef renders a copilot skill.invoked_ref record, what a
+// repeat activation of an unchanged body leaves in place of skill.invoked:
+// the content's hash and length, no body.
+func CopilotSkillInvokedRef(s Skill, id string, ts time.Time) string {
+	body := stripFrontmatter(s.Body)
+	return fmt.Sprintf(`{"type":"skill.invoked_ref","data":{"name":%q,"path":%q,"allowedTools":[],"source":"project","trigger":"agent-invoked","model":"claude-sonnet-5","invokedAtTurn":0,"contentId":%q,"contentLength":%d},"id":%q,"timestamp":%q,"parentId":null}`,
+		s.Name, s.Path, copilotContentID(body), len(body), id, copilotStamp(ts)) + "\n"
+}
+
+// CopilotSkillDelivered renders the skill.context_delivered_ref record that
+// follows every activation: the SHA-256 of the delivered body and the
+// <skill-context> wrapper around it, whose prefix states the skill's base
+// directory and, unless omitFiles, lists every file under the skill
+// directory other than SKILL.md, the way copilot 1.0.88 composes it.
+func CopilotSkillDelivered(s Skill, omitFiles bool, id string, ts time.Time) string {
+	dir := filepath.Dir(s.Path)
+	prefix := fmt.Sprintf("<skill-context name=%q>\nBase directory for this skill: %s\n\n", s.Name, dir)
+	if files := bundledFiles(dir); len(files) > 0 && !omitFiles {
+		prefix += "Related files (use view tool to read):\n"
+		for _, f := range files {
+			prefix += "  - " + f + "\n"
+		}
+		prefix += "\n"
+	}
+	return fmt.Sprintf(`{"type":"skill.context_delivered_ref","data":{"interactionId":"int-1","source":%q,"contentId":%q,"prefix":%q,"suffix":"\n</skill-context>"},"id":%q,"timestamp":%q,"parentId":null}`,
+		"skill-"+s.Name, copilotContentID(stripFrontmatter(s.Body)), prefix, id, copilotStamp(ts)) + "\n"
+}
+
+// copilotContentID is the contentId form copilot records for a body.
+func copilotContentID(body string) string {
+	sum := sha256.Sum256([]byte(body))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// bundledFiles lists every file under dir other than SKILL.md, recursively,
+// as absolute paths in walk order.
+func bundledFiles(dir string) []string {
+	var files []string
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || path == filepath.Join(dir, "SKILL.md") {
+			return nil
+		}
+		files = append(files, path)
+		return nil
+	})
+	return files
 }
 
 // stripFrontmatter drops a leading YAML frontmatter block.
@@ -269,11 +325,14 @@ func CopilotTranscriptPath(home, sessionID string) string {
 // .github/skills under the workdir and skills/ under COPILOT_HOME, and the
 // listing (when enabled) is recorded only on an opening turn, the way a
 // resumed process reuses its state. When Reply is set and the prompt names
-// a discovered skill, the fake also records the skill.invoked delivery a
-// real `skill` tool call leaves, so the body is harness-injected evidence
-// the way it is on the real harness.
+// a discovered skill, the fake also records the delivery a real `skill`
+// tool call leaves, so the body is harness-injected evidence the way it is
+// on the real harness: skill.invoked with the body the first time a
+// session delivers that content, skill.invoked_ref (hash only) on a repeat,
+// each followed by the skill.context_delivered_ref wrapper record.
 func FakeCopilotWith(tb testing.TB, calls *[]agentsummons.Request, b Behavior) func(context.Context, agentsummons.Request) (*agentsummons.Result, error) {
 	tb.Helper()
+	delivered := map[string]bool{} // session id + content id
 	return func(ctx context.Context, req agentsummons.Request) (*agentsummons.Result, error) {
 		*calls = append(*calls, req)
 		home := ExtraEnv(req, "COPILOT_HOME")
@@ -303,9 +362,17 @@ func FakeCopilotWith(tb testing.TB, calls *[]agentsummons.Request, b Behavior) f
 		if b.Reply != nil {
 			reply = b.Reply(req, skills)
 			for i, s := range skills {
-				if strings.Contains(req.Prompt, s.Name) {
+				if !strings.Contains(req.Prompt, s.Name) {
+					continue
+				}
+				key := sessionID + " " + copilotContentID(stripFrontmatter(s.Body))
+				if delivered[key] {
+					record += CopilotSkillInvokedRef(s, fmt.Sprintf("sk-%d-%d", n, i), now)
+				} else {
+					delivered[key] = true
 					record += CopilotSkillInvoked(s, fmt.Sprintf("sk-%d-%d", n, i), now)
 				}
+				record += CopilotSkillDelivered(s, b.OmitBundledFiles, fmt.Sprintf("skd-%d-%d", n, i), now)
 			}
 		}
 		record += CopilotAssistant(reply, fmt.Sprintf("a-%d", n), fmt.Sprintf("am-%d", n), now)

@@ -250,9 +250,10 @@ func TestObserveSessionAntigravityFallbacks(t *testing.T) {
 
 // TestObserveSessionCopilot drives the pipeline against a fake copilot: a
 // preset session ID the sandbox transcript is resolved by, a resumed turn
-// appending to it, the pinned release in the run environment, the listing
-// found in the recorded system prompt, and the harness version read
-// in-band.
+// appending to it and activating the skill again, the pinned release in
+// the run environment, the listing found in the recorded system prompt,
+// the harness version read in-band, and the delivered text form (the
+// <skill-context> wrapper around the body) on both activations.
 func TestObserveSessionCopilot(t *testing.T) {
 	// The sandbox looks for a seed under the home; none here.
 	home := t.TempDir()
@@ -265,7 +266,7 @@ func TestObserveSessionCopilot(t *testing.T) {
 		SkillDirs: []string{harnesstest.WriteSkill(t)},
 		Turns: []Turn{
 			{Prompt: "Activate the my-skill skill and follow its instructions.", Activation: true},
-			{Prompt: "And again, briefly."},
+			{Prompt: "Activate the my-skill skill again, briefly.", Activation: true},
 		},
 	}
 	so, err := ObserveSession(context.Background(), Config{Sandbox: true, KeepFixture: true}, agentsummons.Copilot, spec)
@@ -319,10 +320,21 @@ func TestObserveSessionCopilot(t *testing.T) {
 		}
 	}
 	// The delivered body is harness-injected evidence (the skill.invoked
-	// record's text) and, echoed by the fake model, model output.
+	// record's text) and, echoed by the fake model, model output. The
+	// repeat activation on the resumed turn is logged by reference and
+	// resolves to the same body, so it is a second injection, not a
+	// deduplicated one; and the profile's delivered text form keeps the
+	// <skill-context> wrapper the model saw around both.
 	occs := trace.Phrase(final.Session, "body", final.Profile.EchoSubtypes)
-	if inj := trace.At(occs, trace.LocHarnessInjected); len(inj) == 0 || inj[0].Detail != "skill.invoked" {
-		t.Errorf("activated skill body not harness-injected via skill.invoked: %+v", occs)
+	inj := trace.At(occs, trace.LocHarnessInjected)
+	if len(inj) != 2 || inj[0].Detail != "skill.invoked" || inj[1].Detail != "skill.invoked_ref" {
+		t.Errorf("activated skill body injections = %+v, want skill.invoked then skill.invoked_ref", inj)
+	}
+	for _, o := range inj {
+		text := final.Session.Events[o.EventIndex].System.Text
+		if !strings.HasPrefix(text, "<skill-context name=\"my-skill\">\n") || !strings.HasSuffix(text, "</skill-context>") {
+			t.Errorf("%s text = %q, want the <skill-context> wrapper (delivered form)", o.Detail, text)
+		}
 	}
 	if len(trace.At(occs, trace.LocModelOutput)) == 0 {
 		t.Error("activated skill body never reached model output")

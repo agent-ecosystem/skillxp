@@ -119,6 +119,29 @@ func TestCleanRunCopilot(t *testing.T) {
 	}
 }
 
+// A copilot whose delivered skill context stops listing the skill's
+// bundled files contradicts the profile's enumeration lore: drift.
+func TestBundledFilesMissingIsDrift(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // windows
+	prevRun, prevVersion := invoker.Run, invoker.Version
+	t.Cleanup(func() { invoker.Run, invoker.Version = prevRun, prevVersion })
+	invoker.Version = func(ctx context.Context, id agentsummons.ID) (string, error) { return newer, nil }
+	var calls []agentsummons.Request
+	invoker.Run = harnesstest.FakeCopilotWith(t, &calls, harnesstest.Behavior{Listing: true, Reply: harnesstest.ActivateReply, OmitBundledFiles: true})
+
+	var buf bytes.Buffer
+	cat := RunProbes(context.Background(), &buf, []agentsummons.ID{agentsummons.Copilot}, DefaultProbes(), Options{})
+	t.Log(buf.String())
+	if cat != Drift {
+		t.Fatalf("category = %s, want drift", cat)
+	}
+	if want := "probe project: drift: the delivered skill context no longer lists the bundled file bundled-note.md"; !strings.Contains(buf.String(), want) {
+		t.Errorf("report missing %q", want)
+	}
+}
+
 func TestVersionGate(t *testing.T) {
 	validated := profile.LastValidated[agentsummons.ClaudeCode]
 	t.Run("equal skips", func(t *testing.T) {

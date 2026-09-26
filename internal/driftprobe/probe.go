@@ -110,8 +110,9 @@ type Probe struct {
 
 // DefaultProbes covers every piece of lore a profile encodes: project
 // scope discovery, user scope discovery, and resume attribution (which
-// also re-checks project scope). Listing and echo subtypes are checked on
-// every probe.
+// also re-checks project scope). Listing and echo subtypes, and bundled
+// file enumeration where the profile claims it, are checked on every
+// probe.
 func DefaultProbes() []Probe {
 	return []Probe{
 		{Name: "project"},
@@ -268,8 +269,34 @@ func runOneProbe(ctx context.Context, w io.Writer, p profile.Profile, probe *Pro
 			return Inconclusive
 		}
 	}
+	if p.EnumeratesBundledFiles && !injectedWith(final.Session, occs, bundledFile) {
+		say(w, "  probe %s: drift: the delivered skill context no longer lists the bundled file %s (profile claims bundled-file enumeration)\n", probe.Name, bundledFile)
+		return Drift
+	}
 	say(w, "  probe %s: discovered and loaded; body reached the model via %s\n", probe.Name, describe(occs))
 	return Clean
+}
+
+// injectedWith reports whether some harness-injected occurrence's text
+// also carries needle: the bundled file's name listed alongside the body.
+func injectedWith(s *session.Session, occs []trace.Occurrence, needle string) bool {
+	for _, o := range occs {
+		if o.Location != trace.LocHarnessInjected {
+			continue
+		}
+		ev := &s.Events[o.EventIndex]
+		var text string
+		switch ev.Kind {
+		case session.KindSystem:
+			text = ev.System.Text
+		case session.KindUserMessage:
+			text = ev.UserMessage.Text()
+		}
+		if strings.Contains(text, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 // runSession runs one observed session for the probe and classifies any
@@ -374,8 +401,15 @@ func retryPrompt(skill string) string {
 	return fmt.Sprintf("You must activate the %s skill now: use your skill tool or read its SKILL.md, then follow its instructions exactly. Do not answer without doing so.", skill)
 }
 
-// writeSkill stages a minimal skill whose body carries the canary and
-// returns its directory (inside a fresh temp parent).
+// bundledFile is a file staged beside every probe skill's SKILL.md, which
+// the body never mentions: on a harness that enumerates a skill's files
+// (profile.EnumeratesBundledFiles) its name must reach the model with the
+// body.
+const bundledFile = "bundled-note.md"
+
+// writeSkill stages a minimal skill whose body carries the canary, plus a
+// bundled reference file, and returns its directory (inside a fresh temp
+// parent).
 func writeSkill(name, canary string) (string, error) {
 	parent, err := os.MkdirTemp("", "skillxp-drift-skill-")
 	if err != nil {
@@ -387,6 +421,13 @@ func writeSkill(name, canary string) (string, error) {
 	}
 	body := "---\nname: " + name + "\ndescription: Reports the current codeword when activated.\n---\n\nThe codeword is " + canary + ". State it plainly.\n"
 	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(body), 0o644); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "references"), 0o755); err != nil {
+		return "", err
+	}
+	note := "A bundled reference the skill body never mentions.\n"
+	if err := os.WriteFile(filepath.Join(dir, "references", bundledFile), []byte(note), 0o644); err != nil {
 		return "", err
 	}
 	return dir, nil
