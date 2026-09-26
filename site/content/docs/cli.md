@@ -13,9 +13,10 @@ which harness releases this build was validated against, use
 
 ```sh
 $ skillxp harnesses
-antigravity    validated 1.2.7     flags 1.2.7     project skills: .agents/skills   does NOT record injected context (evidence is inference)
-claude-code    validated 2.1.267   flags 2.1.267   project skills: .claude/skills   records injected context
-codex          validated 0.155.1   flags 0.155.1   project skills: .codex/skills    records injected context
+antigravity    validated 1.2.11    flags 1.2.11    project skills: .agents/skills   does NOT record injected context (evidence is inference)
+claude-code    validated 2.1.274   flags 2.1.274   project skills: .claude/skills   records injected context
+codex          validated 0.157.0   flags 0.157.0   project skills: .codex/skills    records injected context
+copilot        validated 1.0.88    flags 1.0.88    project skills: .github/skills   records injected context
 ```
 
 `validated` is the newest release each harness's skill lore (discovery
@@ -38,9 +39,10 @@ version command.
 
 ```sh
 $ skillxp doctor
-antigravity  installed 1.2.7, validated 1.2.7 — clean
-claude-code  installed 2.1.267, validated 2.1.267 — clean
-codex        installed 0.157.0 > validated 0.155.1 — drift candidate; run `skillxp drift probe` to revalidate
+antigravity  installed 1.2.11, validated 1.2.11 — clean
+claude-code  installed 2.1.274, validated 2.1.274 — clean
+codex        installed 0.158.0 > validated 0.157.0 — drift candidate; run `skillxp drift probe` to revalidate
+copilot      installed 1.0.88, validated 1.0.88 — clean
 ```
 
 A drift candidate is a statement about validation coverage, not a

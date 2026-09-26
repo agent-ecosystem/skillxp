@@ -24,7 +24,7 @@ loading benchmark, whose checks and verdict logic live in that repo's
 ## Status
 
 Early development. Supported harnesses: Antigravity CLI, Claude Code,
-and Codex CLI. Run `skillxp harnesses` to see the harness versions your
+Codex CLI, and GitHub Copilot CLI. Run `skillxp harnesses` to see the harness versions your
 installed release was validated against, and `skillxp doctor` to compare
 them with what you have installed (newer harness releases usually keep
 working; validation records coverage, not a compatibility bound).

@@ -2,7 +2,7 @@
 
 Python wrapper around
 [skillxp](https://github.com/agent-ecosystem/skillxp), a Go CLI that
-observes how agent harnesses (Antigravity CLI, Claude Code, Codex CLI)
+observes how agent harnesses (Antigravity CLI, Claude Code, Codex CLI, GitHub Copilot CLI)
 load and activate [Agent Skills](https://agentskills.io): it installs a
 skill in a fresh fixture, invokes the harness headlessly, and reports
 what actually reached the model, with transcript evidence.

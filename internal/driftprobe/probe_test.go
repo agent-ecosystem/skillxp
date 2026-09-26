@@ -82,6 +82,43 @@ func TestCleanRun(t *testing.T) {
 	}
 }
 
+// The copilot fake exercises the profile's own lore end to end: preset
+// identity, the system-prompt listing, the native .github/skills location,
+// and the sandbox's user scope.
+func TestCleanRunCopilot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // windows
+	prevRun, prevVersion := invoker.Run, invoker.Version
+	t.Cleanup(func() { invoker.Run, invoker.Version = prevRun, prevVersion })
+	invoker.Version = func(ctx context.Context, id agentsummons.ID) (string, error) { return newer, nil }
+	var calls []agentsummons.Request
+	invoker.Run = harnesstest.FakeCopilotWith(t, &calls, harnesstest.Behavior{Listing: true, Reply: harnesstest.ActivateReply})
+
+	var buf bytes.Buffer
+	cat := RunProbes(context.Background(), &buf, []agentsummons.ID{agentsummons.Copilot}, DefaultProbes(), Options{})
+	t.Log(buf.String())
+	if cat != Clean {
+		t.Fatalf("category = %s, want clean", cat)
+	}
+	for _, want := range []string{
+		"probe project: discovered and loaded; body reached the model via harness-injected, model-output",
+		"probe user: discovered and loaded; body reached the model via harness-injected, model-output",
+		"probe resume: discovered and loaded; body reached the model via harness-injected, model-output",
+		"clean: copilot at 99.0.0 still matches its profile",
+	} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("report missing %q", want)
+		}
+	}
+	if len(calls) != 4 {
+		t.Errorf("%d invocations, want 4", len(calls))
+	}
+	if _, err := os.Stat(filepath.Join(calls[1].Workdir, ".github", "skills")); err == nil {
+		t.Error("user probe installed the skill at project scope")
+	}
+}
+
 func TestVersionGate(t *testing.T) {
 	validated := profile.LastValidated[agentsummons.ClaudeCode]
 	t.Run("equal skips", func(t *testing.T) {

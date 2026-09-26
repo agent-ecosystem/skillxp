@@ -18,7 +18,8 @@ import (
 //	SKILLXP_E2E=claude-code go test ./observe/ -run TestLiveSmoke -v
 //
 // claude-code additionally needs CLAUDE_CODE_OAUTH_TOKEN (see
-// profile.PrepareSandbox); other harnesses need their sandbox seeds.
+// profile.PrepareSandbox); antigravity needs its sandbox seed; codex and
+// copilot need nothing beyond an authenticated install.
 //
 // This is the cheapest single sanity check (one project-scope turn). The
 // full check of a profile's lore, user scope and resume included, is

@@ -14,7 +14,8 @@ import "github.com/agent-ecosystem/agentsummons"
 // is how a newer release earns its entry (see DEVELOPMENT.md).
 // Alphabetical. Callers must treat the map as read-only.
 var LastValidated = map[agentsummons.ID]string{
-	agentsummons.Antigravity: "1.2.7",
-	agentsummons.ClaudeCode:  "2.1.267",
-	agentsummons.Codex:       "0.155.1",
+	agentsummons.Antigravity: "1.2.11",
+	agentsummons.ClaudeCode:  "2.1.274",
+	agentsummons.Codex:       "0.157.0",
+	agentsummons.Copilot:     "1.0.88",
 }

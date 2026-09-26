@@ -49,6 +49,6 @@ See [Go Library](/docs/library/) for the API.
 
 skillxp invokes real harnesses, so the harnesses you observe must be
 installed and authenticated: `claude` (Claude Code), `codex` (Codex
-CLI), and `agy` (Antigravity CLI). Sandboxed runs have one extra
+CLI), `copilot` (GitHub Copilot CLI), and `agy` (Antigravity CLI). Sandboxed runs have one extra
 one-time auth step per harness; see
 [Sandboxing](/docs/sandboxing/#per-harness-auth).

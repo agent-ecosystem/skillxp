@@ -1,6 +1,7 @@
-// Package harnesstest fakes the claude-code end of the invocation seam for
-// tests: its stub writes genuine transcript records into the sandbox's
-// store, so the real locate and parse pipeline runs against real files.
+// Package harnesstest fakes the harness end of the invocation seam for
+// tests: its stubs (claude-code and copilot) write genuine transcript
+// records into the sandbox's store, so the real locate and parse pipeline
+// runs against real files.
 package harnesstest
 
 import (
@@ -62,6 +63,7 @@ func TranscriptPath(configDir, sessionID string) string {
 type Skill struct {
 	Name string
 	Body string // SKILL.md contents
+	Path string // SKILL.md path
 }
 
 // Behavior configures FakeClaudeCodeWith.
@@ -173,7 +175,7 @@ func discoverSkills(roots ...string) []Skill {
 			if err != nil {
 				continue
 			}
-			skills = append(skills, Skill{Name: e.Name(), Body: string(body)})
+			skills = append(skills, Skill{Name: e.Name(), Body: string(body), Path: filepath.Join(root, e.Name(), "SKILL.md")})
 		}
 	}
 	sort.Slice(skills, func(i, j int) bool { return skills[i].Name < skills[j].Name })
@@ -192,4 +194,144 @@ func WriteSkill(tb testing.TB) string {
 		tb.Fatal(err)
 	}
 	return src
+}
+
+// copilotStamp renders a timestamp the way copilot records them.
+func copilotStamp(ts time.Time) string {
+	return ts.UTC().Format("2006-01-02T15:04:05.000Z")
+}
+
+// CopilotStart renders a copilot session.start record, the head every
+// transcript opens with (session id, version, cwd).
+func CopilotStart(sessionID, cwd, id string, ts time.Time) string {
+	return fmt.Sprintf(`{"type":"session.start","data":{"sessionId":%q,"version":1,"producer":"copilot-agent","copilotVersion":"1.0.88","startTime":%q,"context":{"cwd":%q}},"id":%q,"timestamp":%q,"parentId":null}`,
+		sessionID, copilotStamp(ts), cwd, id, copilotStamp(ts)) + "\n"
+}
+
+// CopilotUser renders a copilot human user.message record.
+func CopilotUser(prompt, id, msgID string, ts time.Time) string {
+	return fmt.Sprintf(`{"type":"user.message","data":{"content":%q,"messageId":%q,"interactionId":"int-1","turnId":"0"},"id":%q,"timestamp":%q,"parentId":null}`,
+		prompt, msgID, id, copilotStamp(ts)) + "\n"
+}
+
+// CopilotSystemPrompt renders a copilot system.message record whose prompt
+// carries the <available_skills> listing naming the given skills, the
+// discovery evidence a real session records on the opening turn only.
+func CopilotSystemPrompt(names []string, id string, ts time.Time) string {
+	var b strings.Builder
+	b.WriteString("You are a test assistant.\n<skill>\n<available_skills>\n")
+	for _, n := range names {
+		fmt.Fprintf(&b, "<skill>\n  <name>%s</name>\n  <location>project</location>\n</skill>\n", n)
+	}
+	b.WriteString("</available_skills>\n</skill>\n")
+	return fmt.Sprintf(`{"type":"system.message","data":{"role":"system","content":%q,"interactionId":"int-1"},"id":%q,"timestamp":%q,"parentId":null}`,
+		b.String(), id, copilotStamp(ts)) + "\n"
+}
+
+// CopilotAssistant renders a copilot assistant.message record with text
+// and no tool requests.
+func CopilotAssistant(text, id, msgID string, ts time.Time) string {
+	return fmt.Sprintf(`{"type":"assistant.message","data":{"messageId":%q,"originatingMessageId":"um-1","model":"claude-sonnet-5","content":%q,"toolRequests":[],"interactionId":"int-1","turnId":"0"},"id":%q,"timestamp":%q,"parentId":null}`,
+		msgID, text, id, copilotStamp(ts)) + "\n"
+}
+
+// CopilotSkillInvoked renders a copilot skill.invoked record, the delivery
+// record a real `skill` tool call leaves: the SKILL.md body with its
+// frontmatter stripped, as the harness hands it to the model.
+func CopilotSkillInvoked(s Skill, id string, ts time.Time) string {
+	return fmt.Sprintf(`{"type":"skill.invoked","data":{"name":%q,"path":%q,"content":%q,"allowedTools":[],"source":"project","trigger":"agent-invoked","model":"claude-sonnet-5","invokedAtTurn":0},"id":%q,"timestamp":%q,"parentId":null}`,
+		s.Name, s.Path, stripFrontmatter(s.Body), id, copilotStamp(ts)) + "\n"
+}
+
+// stripFrontmatter drops a leading YAML frontmatter block.
+func stripFrontmatter(body string) string {
+	rest, ok := strings.CutPrefix(body, "---\n")
+	if !ok {
+		return body
+	}
+	_, after, ok := strings.Cut(rest, "\n---\n")
+	if !ok {
+		return body
+	}
+	return strings.TrimLeft(after, "\n")
+}
+
+// CopilotTranscriptPath is where the fake writes a session's transcript
+// inside a sandbox COPILOT_HOME.
+func CopilotTranscriptPath(home, sessionID string) string {
+	return filepath.Join(home, "session-state", sessionID, "events.jsonl")
+}
+
+// FakeCopilotWith returns an invocation stub that behaves like a sandboxed
+// copilot run: it appends the turn's records to the session transcript
+// inside the request's COPILOT_HOME and echoes the preset session ID
+// (resume keeps it). Discovery matches copilot's native locations,
+// .github/skills under the workdir and skills/ under COPILOT_HOME, and the
+// listing (when enabled) is recorded only on an opening turn, the way a
+// resumed process reuses its state. When Reply is set and the prompt names
+// a discovered skill, the fake also records the skill.invoked delivery a
+// real `skill` tool call leaves, so the body is harness-injected evidence
+// the way it is on the real harness.
+func FakeCopilotWith(tb testing.TB, calls *[]agentsummons.Request, b Behavior) func(context.Context, agentsummons.Request) (*agentsummons.Result, error) {
+	tb.Helper()
+	return func(ctx context.Context, req agentsummons.Request) (*agentsummons.Result, error) {
+		*calls = append(*calls, req)
+		home := ExtraEnv(req, "COPILOT_HOME")
+		if home == "" {
+			tb.Error("invoke: no COPILOT_HOME in request env")
+		}
+		sessionID := req.SessionID
+		if req.Resume != "" {
+			sessionID = req.Resume
+		}
+		now := time.Now()
+		n := len(*calls)
+		skills := discoverSkills(filepath.Join(req.Workdir, ".github", "skills"), filepath.Join(home, "skills"))
+		record := ""
+		if req.Resume == "" {
+			record += CopilotStart(sessionID, req.Workdir, fmt.Sprintf("s-%d", n), now)
+		}
+		record += CopilotUser(req.Prompt, fmt.Sprintf("u-%d", n), fmt.Sprintf("um-%d", n), now)
+		if b.Listing && req.Resume == "" {
+			names := make([]string, len(skills))
+			for i, s := range skills {
+				names[i] = s.Name
+			}
+			record += CopilotSystemPrompt(names, fmt.Sprintf("sys-%d", n), now)
+		}
+		reply := "done"
+		if b.Reply != nil {
+			reply = b.Reply(req, skills)
+			for i, s := range skills {
+				if strings.Contains(req.Prompt, s.Name) {
+					record += CopilotSkillInvoked(s, fmt.Sprintf("sk-%d-%d", n, i), now)
+				}
+			}
+		}
+		record += CopilotAssistant(reply, fmt.Sprintf("a-%d", n), fmt.Sprintf("am-%d", n), now)
+		path := CopilotTranscriptPath(home, sessionID)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return nil, err
+		}
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := f.WriteString(record); err != nil {
+			return nil, err
+		}
+		if err := f.Close(); err != nil {
+			return nil, err
+		}
+		return &agentsummons.Result{
+			Harness:     req.Harness,
+			Argv:        []string{"copilot", "-p", req.Prompt},
+			PromptIndex: 2,
+			Workdir:     req.Workdir,
+			Start:       now,
+			End:         now.Add(time.Second),
+			ExitCode:    0,
+			SessionID:   req.SessionID,
+		}, nil
+	}
 }

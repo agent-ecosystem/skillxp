@@ -71,15 +71,52 @@ func TestPrepareIdentity(t *testing.T) {
 		if err := p.Prepare(&req, false); err != nil {
 			t.Fatalf("%s: %v", p.Harness, err)
 		}
-		if p.Harness == agentsummons.ClaudeCode {
+		if p.presetsIdentity() {
 			if !uuidV4.MatchString(req.SessionID) {
-				t.Errorf("claude-code preset session id %q is not a v4 UUID", req.SessionID)
+				t.Errorf("%s: preset session id %q is not a v4 UUID", p.Harness, req.SessionID)
 			}
 		} else if req.SessionID != "" {
-			t.Errorf("%s: Prepare preset a session id %q; only claude-code supports that", p.Harness, req.SessionID)
+			t.Errorf("%s: Prepare preset a session id %q; only harnesses that accept one may", p.Harness, req.SessionID)
 		}
 		if req.Resume != "" {
 			t.Errorf("%s: Prepare set Resume %q on an opening turn", p.Harness, req.Resume)
+		}
+	}
+}
+
+// The harnesses that accept a caller-chosen session ID are exactly the
+// ones whose transcript Locate resolves by that ID.
+func TestPresetsIdentity(t *testing.T) {
+	want := map[agentsummons.ID]bool{agentsummons.ClaudeCode: true, agentsummons.Copilot: true}
+	for _, p := range Profiles() {
+		if got := p.presetsIdentity(); got != want[p.Harness] {
+			t.Errorf("%s: presetsIdentity = %v, want %v", p.Harness, got, want[p.Harness])
+		}
+	}
+}
+
+// copilot auto-updates on launch, so both the opening and the resumed
+// turn pin the installed release; no other harness needs run environment.
+func TestPinsCopilotRelease(t *testing.T) {
+	const pin = "COPILOT_AUTO_UPDATE=false"
+	for _, p := range Profiles() {
+		open := agentsummons.Request{Harness: p.Harness}
+		if err := p.Prepare(&open, true); err != nil {
+			t.Fatal(err)
+		}
+		resume := agentsummons.Request{Harness: p.Harness}
+		p.PrepareResume(&resume, true, "session-123")
+		for _, req := range []agentsummons.Request{open, resume} {
+			pinned := false
+			for _, e := range req.ExtraEnv {
+				pinned = pinned || e == pin
+			}
+			if p.Harness == agentsummons.Copilot && !pinned {
+				t.Errorf("copilot request env %v lacks %s", req.ExtraEnv, pin)
+			}
+			if p.Harness != agentsummons.Copilot && len(req.ExtraEnv) != 0 {
+				t.Errorf("%s: Prepare set env %v", p.Harness, req.ExtraEnv)
+			}
 		}
 	}
 }
@@ -118,6 +155,9 @@ func TestPermissions(t *testing.T) {
 	}
 	if req := perms(agentsummons.Codex, true); req.AutoApprove || len(req.AllowedTools) != 0 {
 		t.Errorf("codex activation needs no extra permissions, got %+v", req)
+	}
+	if req := perms(agentsummons.Copilot, true); req.AutoApprove || len(req.AllowedTools) != 0 {
+		t.Errorf("copilot activation needs no extra permissions, got %+v", req)
 	}
 
 	// Passive turns get no tool permissions on any harness.
@@ -382,6 +422,53 @@ func TestPrepareSandboxAntigravity(t *testing.T) {
 	}
 	if len(wantEnv) != 0 {
 		t.Errorf("sandbox env %v missing %v", sb.Env, wantEnv)
+	}
+}
+
+// copilot's sandbox is a fresh COPILOT_HOME: no auth material is copied
+// (the keychain token stays reachable), and a seed is cloned when present.
+func TestPrepareSandboxCopilot(t *testing.T) {
+	home := fakeHome(t)
+	p, err := For(agentsummons.Copilot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fixture := t.TempDir()
+	sb, err := p.PrepareSandbox(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(fixture, "home", "copilot")
+	if _, err := os.Stat(dir); err != nil {
+		t.Errorf("sandbox home not created: %v", err)
+	}
+	if len(sb.Env) != 1 || sb.Env[0] != "COPILOT_HOME="+dir {
+		t.Errorf("env = %v, want COPILOT_HOME override", sb.Env)
+	}
+	if sb.TranscriptRoot != filepath.Join(dir, "session-state") || sb.UserSkillDir != filepath.Join(dir, "skills") {
+		t.Errorf("sandbox roots = %q / %q", sb.TranscriptRoot, sb.UserSkillDir)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("fresh sandbox home is not empty: %v", entries)
+	}
+
+	// A seed (e.g. a plaintext config.json on a host without a keychain)
+	// is cloned into the home.
+	seed := filepath.Join(home, ".skillxp", "seeds", "copilot")
+	if err := os.MkdirAll(seed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(seed, "config.json"), []byte(`{"seeded":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fixture = t.TempDir()
+	if _, err := p.PrepareSandbox(fixture); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(fixture, "home", "copilot", "config.json"))
+	if err != nil || string(data) != `{"seeded":true}` {
+		t.Errorf("config.json = %q, %v; want the seed copy", data, err)
 	}
 }
 

@@ -359,6 +359,80 @@ func TestLocateClaudeCodeByPresetID(t *testing.T) {
 	}
 }
 
+// copilotStart renders a copilot session.start head record followed by
+// the human prompt, the two records identity and attribution read.
+func copilotStart(sessionID, cwd, prompt string, ts time.Time) string {
+	stamp := ts.UTC().Format("2006-01-02T15:04:05.000Z")
+	return fmt.Sprintf(`{"type":"session.start","data":{"sessionId":%q,"version":1,"producer":"copilot-agent","copilotVersion":"1.0.88","startTime":%q,"context":{"cwd":%q}},"id":"e-01","timestamp":%q,"parentId":null}`,
+		sessionID, stamp, cwd, stamp) + "\n" +
+		fmt.Sprintf(`{"type":"user.message","data":{"content":%q,"messageId":"um-1","interactionId":"int-1","turnId":"0"},"id":"e-02","timestamp":%q,"parentId":"e-01"}`,
+			prompt, stamp) + "\n"
+}
+
+// writeCopilotSession writes one copilot transcript into root's
+// per-session layout: <root>/<sessionID>/events.jsonl.
+func writeCopilotSession(t *testing.T, root, sessionID, content string) string {
+	t.Helper()
+	path := filepath.Join(root, sessionID, "events.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// copilot presets the session ID, so attribution resolves the session
+// directory directly and never scans the time window: a same-window
+// transcript with another ID is not a candidate.
+func TestLocateCopilotByPresetID(t *testing.T) {
+	p, err := For(agentsummons.Copilot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, workdir := t.TempDir(), t.TempDir()
+	path := writeCopilotSession(t, root, "s-run", copilotStart("s-run", workdir, "hello", runStart))
+	writeCopilotSession(t, root, "s-other", copilotStart("s-other", workdir, "hello", runStart))
+
+	res := &agentsummons.Result{Harness: agentsummons.Copilot, Workdir: workdir, Start: runStart, End: runEnd, SessionID: "s-run"}
+	ref, err := p.locateOnce(res, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref.Meta.SessionID != "s-run" || ref.Path != path {
+		t.Errorf("ref = %+v, want s-run at %s", ref, path)
+	}
+	if ref.Meta.HarnessVersion != "1.0.88" {
+		t.Errorf("harness version = %q, want the in-band copilotVersion", ref.Meta.HarnessVersion)
+	}
+
+	// A directory whose transcript records a different ID is a mismatch,
+	// not a match by layout alone.
+	writeCopilotSession(t, root, "s-liar", copilotStart("s-truth", workdir, "hello", runStart))
+	res.SessionID = "s-liar"
+	if _, err := p.locateOnce(res, root); err == nil {
+		t.Error("in-band session id mismatch: want error")
+	}
+}
+
+func TestLocateByIDCopilot(t *testing.T) {
+	p, err := For(agentsummons.Copilot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	writeCopilotSession(t, root, "s-1", copilotStart("s-1", "/tmp/exp", "hello", runStart))
+
+	ref, err := p.LocateByID(context.Background(), "s-1", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref.Meta.SessionID != "s-1" {
+		t.Errorf("located %q, want s-1", ref.Meta.SessionID)
+	}
+}
+
 func TestLocateByID(t *testing.T) {
 	p := codexProfile(t)
 	root := t.TempDir()

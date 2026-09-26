@@ -6,6 +6,52 @@ tag). Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- GitHub Copilot CLI (`copilot`) as the fourth harness, validated
+  against 1.0.88. Project skills are staged at `.github/skills`
+  (copilot also reads `.agents/skills` and `.claude/skills`) and user
+  skills at `~/.copilot/skills`; both reached the listing from a
+  sandbox. The discovery listing is the `<available_skills>` block of
+  the system prompt, which the transcript records as a `system.message`
+  on the session's opening turn (a resumed run records none). Activation needs no permission flag: a headless
+  run executes read-only tools without a bypass and denies only writes,
+  and the `skill` tool delivered the body with no flag at all. The
+  session ID is preset (`--session-id`) and the transcript resolved by
+  it directly, as on claude-code; resume preserves it. Every copilot
+  run pins `COPILOT_AUTO_UPDATE=false`, since the CLI otherwise
+  auto-updates on launch and could change release between the version
+  probe and the run. Sandboxes set `COPILOT_HOME` (transcripts under
+  `session-state/`, user skills under `skills/`), copy no auth material
+  (the `/login` token lives in the macOS keychain, which the override
+  does not hide), and clone `~/.skillxp/seeds/copilot` when present for
+  hosts where copilot fell back to a plaintext `config.json`. The
+  delivered skill body is recorded as model-visible text (the
+  `skill.invoked` record, agentminutes v0.7.0+), so a phrase traced from
+  the body surfaces as `harness-injected`, the evidence claude-code
+  gives; the drift probe reports every copilot probe that way.
+
+### Changed
+
+- Bumped agentsummons to v0.4.0 and agentminutes to v0.7.0, which add
+  Copilot CLI invocation and transcript parsing (agentminutes' locator
+  honors `COPILOT_HOME`, the sandbox seam skillxp relies on). Their
+  intermediate releases (v0.3.5, v0.5.2) revalidated their own axes
+  against antigravity 1.2.11, claude-code 2.1.274, and codex 0.157.0.
+  agentminutes v0.7.0 also gives a system event's `text` a stated
+  contract (the record's model-visible text, bare), which widens what
+  the trace report can see: Copilot's delivered skill body, Claude
+  Code's injected attachments (system prompt, CLAUDE.md bodies,
+  reminders, listings with their rendered headers), and Codex's system
+  prompt (`session_meta/base_instructions`). Its schema `0.2.0` moves a
+  Claude Code attachment's fields under `attachment.<key>` in
+  `details`; skillxp reads no `details`, so bundles change only in what
+  `session.json` carries.
+- Revalidated the skill lore against those same releases
+  (`profile.LastValidated`): the drift probe's project-scope, user-scope,
+  and resume experiments all held on antigravity 1.2.11, claude-code
+  2.1.274, and codex 0.157.0, so no profile changes were needed.
+
 ## [0.2.0] - 2026-09-20
 
 ### Added

@@ -1,7 +1,7 @@
 {
   "name": "skillxp",
   "version": "0.0.0",
-  "description": "Observes how agent harnesses (Antigravity CLI, Claude Code, Codex CLI) load and activate Agent Skills. Node wrapper around the skillxp Go CLI.",
+  "description": "Observes how agent harnesses (Antigravity CLI, Claude Code, Codex CLI, GitHub Copilot CLI) load and activate Agent Skills. Node wrapper around the skillxp Go CLI.",
   "main": "lib/index.js",
   "bin": {
     "skillxp": "bin/skillxp.js"
@@ -23,6 +23,7 @@
     "claude-code",
     "codex",
     "antigravity",
+    "copilot",
     "headless"
   ],
   "author": "Dachary Carey",

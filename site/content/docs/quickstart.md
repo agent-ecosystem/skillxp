@@ -27,6 +27,7 @@ $ skillxp harnesses
 antigravity    project skills: .agents/skills   does NOT record injected context (evidence is inference)
 claude-code    project skills: .claude/skills   records injected context
 codex          project skills: .codex/skills    records injected context
+copilot        project skills: .github/skills   records injected context
 ```
 
 ## Observe a skill invocation

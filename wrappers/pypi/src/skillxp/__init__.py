@@ -1,5 +1,5 @@
 """Python wrapper around the skillxp Go CLI, which observes how agent
-harnesses (Antigravity CLI, Claude Code, Codex CLI) load and activate
+harnesses (Antigravity CLI, Claude Code, Codex CLI, GitHub Copilot CLI) load and activate
 Agent Skills.
 
 The wheel bundles the real binary; the ``skillxp`` console script is a

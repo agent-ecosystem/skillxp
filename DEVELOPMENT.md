@@ -22,14 +22,14 @@ SKILLXP_E2E=claude-code go test ./observe/ -run TestLiveSmoke -v
 
 Hermetic tests never invoke a real harness. Production code calls
 agentsummons through the `internal/invoker` seam, and tests swap it for
-`internal/harnesstest.FakeClaudeCode`, which writes genuine transcript
-records into the sandbox store so the real locate and parse pipeline
-runs against real files. Extend those helpers rather than spawning
+`internal/harnesstest.FakeClaudeCode` (or `FakeCopilotWith`), which
+writes genuine transcript records into the sandbox store so the real
+locate and parse pipeline runs against real files. Extend those helpers rather than spawning
 harnesses; the only test that talks to a real harness is the opt-in
 live smoke test above. Locate-attribution tests build synthetic
 transcript stores per harness layout (see `profile/locate_test.go`)
 and always pass explicit roots so tests never touch `~/.claude`,
-`~/.codex`, or `~/.gemini`. CI enforces an 80% statement-coverage
+`~/.codex`, `~/.copilot`, or `~/.gemini`. CI enforces an 80% statement-coverage
 floor; the JSON field names of observation bundles are pinned by
 contract tests (`observe/contract_test.go`) because graders parse
 them.
@@ -90,7 +90,7 @@ so the three libraries reconcile drift the same way.
   session). Each probe grades the lore in two tiers. **Drift** is the
   harness contradicting the profile: the skill absent from the listing
   subtypes the profile names (claude-code `attachment/skill_listing`,
-  codex `message/developer`), the transcript not locatable or parseable
+  codex `message/developer`, copilot `system.message`), the transcript not locatable or parseable
   where the profile says (`observe.TranscriptError`), or a resumed turn
   missing from the opening turn's session. **Inconclusive** is the
   model's doing: the skill was listed but its body never surfaced in a
@@ -108,19 +108,23 @@ secret manager and resolving inline, e.g.
 `CLAUDE_CODE_OAUTH_TOKEN="$(op item get <item> --fields password --reveal)"`,
 keeps it off disk); codex needs `~/.codex/auth.json` or a seed under
 `~/.skillxp/seeds/codex`; antigravity needs the one-time seed home under
-`~/.skillxp/seeds/antigravity/home`. A forced run on all three at their
-validated versions looks like this and takes about a minute:
+`~/.skillxp/seeds/antigravity/home`; copilot needs nothing on macOS (its
+keychain token stays reachable under `COPILOT_HOME`) and, on a host where
+it stored the token in a plaintext `config.json`, that file under
+`~/.skillxp/seeds/copilot/` or a `COPILOT_GITHUB_TOKEN`. A forced run on
+every harness at its validated version looks like this and takes a few
+minutes:
 
 ```
 $ skillxp drift probe -force
 antigravity:
-  probing 1.2.7 (last validated 1.2.7; --force)
+  probing 1.2.11 (last validated 1.2.11; --force)
   probe project: discovered and loaded; body reached the model via tool-result, model-output
   probe user: discovered and loaded; body reached the model via tool-result, model-output
   probe resume: discovered and loaded; body reached the model via tool-result, model-output
-  clean: antigravity at 1.2.7 still matches its profile
+  clean: antigravity at 1.2.11 still matches its profile
 claude-code:
-  probing 2.1.267 (last validated 2.1.267; --force)
+  probing 2.1.274 (last validated 2.1.274; --force)
   probe project: discovered and loaded; body reached the model via harness-injected, model-output
   ...
 ```

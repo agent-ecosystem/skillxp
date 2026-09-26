@@ -13,6 +13,7 @@ import (
 	"github.com/agent-ecosystem/agentsummons"
 	"github.com/agent-ecosystem/skillxp/internal/harnesstest"
 	"github.com/agent-ecosystem/skillxp/internal/invoker"
+	"github.com/agent-ecosystem/skillxp/trace"
 )
 
 // stubHarness swaps the invocation seams for the test's lifetime.
@@ -244,6 +245,87 @@ func TestObserveSessionAntigravityFallbacks(t *testing.T) {
 	}
 	if len(obs.Session.Events) == 0 {
 		t.Error("observation carries no parsed session")
+	}
+}
+
+// TestObserveSessionCopilot drives the pipeline against a fake copilot: a
+// preset session ID the sandbox transcript is resolved by, a resumed turn
+// appending to it, the pinned release in the run environment, the listing
+// found in the recorded system prompt, and the harness version read
+// in-band.
+func TestObserveSessionCopilot(t *testing.T) {
+	// The sandbox looks for a seed under the home; none here.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // windows
+	var calls []agentsummons.Request
+	stubHarness(t, "1.0.88", harnesstest.FakeCopilotWith(t, &calls, harnesstest.Behavior{Listing: true, Reply: harnesstest.ActivateReply}))
+
+	spec := SessionSpec{
+		SkillDirs: []string{harnesstest.WriteSkill(t)},
+		Turns: []Turn{
+			{Prompt: "Activate the my-skill skill and follow its instructions.", Activation: true},
+			{Prompt: "And again, briefly."},
+		},
+	}
+	so, err := ObserveSession(context.Background(), Config{Sandbox: true, KeepFixture: true}, agentsummons.Copilot, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(so.ProjectDir)) })
+
+	if len(calls) != 2 {
+		t.Fatalf("harness invoked %d times, want 2", len(calls))
+	}
+	open, resume := calls[0], calls[1]
+	if open.SessionID == "" || open.Resume != "" {
+		t.Errorf("opening turn identity: SessionID=%q Resume=%q; want a preset ID only", open.SessionID, open.Resume)
+	}
+	if resume.Resume != open.SessionID || resume.SessionID != "" {
+		t.Errorf("resumed turn identity: SessionID=%q Resume=%q; want Resume=%q only", resume.SessionID, resume.Resume, open.SessionID)
+	}
+	if open.AutoApprove || len(open.AllowedTools) != 0 {
+		t.Errorf("copilot activation turn asked for permissions: %+v", open)
+	}
+	for i, c := range calls {
+		if harnesstest.ExtraEnv(c, "COPILOT_AUTO_UPDATE") != "false" {
+			t.Errorf("call %d does not pin the release: env %v", i, c.ExtraEnv)
+		}
+		if harnesstest.ExtraEnv(c, "COPILOT_HOME") == "" {
+			t.Errorf("call %d not sandboxed", i)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(open.Workdir, ".github", "skills", "my-skill", "SKILL.md")); err != nil {
+		t.Errorf("skill not staged at copilot's project location: %v", err)
+	}
+
+	final := so.Final()
+	if so.SessionID != open.SessionID || final.SessionID != open.SessionID {
+		t.Errorf("session id = %q / %q, want the preset %q", so.SessionID, final.SessionID, open.SessionID)
+	}
+	if final.HarnessVersion != "1.0.88" {
+		t.Errorf("harness version = %q, want the in-band copilotVersion", final.HarnessVersion)
+	}
+	if !strings.HasSuffix(final.TranscriptPath, filepath.Join(open.SessionID, "events.jsonl")) {
+		t.Errorf("transcript path = %q, want the sandbox session directory", final.TranscriptPath)
+	}
+	if trace.SkillListing(final.Session, final.Profile.SkillListingSubtypes, "my-skill") < 0 {
+		t.Error("skill absent from the recorded system prompt listing")
+	}
+	// The resumed turn landed in the same session.
+	for _, turn := range spec.Turns {
+		if !hasHumanPrompt(final.Session, turn.Prompt) {
+			t.Errorf("final session does not record prompt %q", turn.Prompt)
+		}
+	}
+	// The delivered body is harness-injected evidence (the skill.invoked
+	// record's text) and, echoed by the fake model, model output.
+	occs := trace.Phrase(final.Session, "body", final.Profile.EchoSubtypes)
+	if inj := trace.At(occs, trace.LocHarnessInjected); len(inj) == 0 || inj[0].Detail != "skill.invoked" {
+		t.Errorf("activated skill body not harness-injected via skill.invoked: %+v", occs)
+	}
+	if len(trace.At(occs, trace.LocModelOutput)) == 0 {
+		t.Error("activated skill body never reached model output")
 	}
 }
 

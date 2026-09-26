@@ -100,6 +100,34 @@ func Profiles() []Profile {
 			RecordsInjectedContext: true,
 			LocateSlack:            5 * time.Second,
 		},
+		{
+			Harness: agentsummons.Copilot,
+			// Validated 1.0.88 (2026-09-25): `copilot skill` documents
+			// project skills at .github/skills, .agents/skills, or
+			// .claude/skills and personal skills at ~/.copilot/skills or
+			// ~/.agents/skills; the native locations are the ones staged,
+			// and both reached the listing in a COPILOT_HOME sandbox.
+			ProjectSkillDir: filepath.Join(".github", "skills"),
+			UserSkillDir:    filepath.Join(".copilot", "skills"),
+			// The listing is the <available_skills> block of the system
+			// prompt, which the transcript records as a system.message on
+			// the session's opening turn (a resumed run records none; its
+			// text is the whole prompt). Activation
+			// goes through the `skill` tool: the result is a one-line
+			// confirmation, and the body itself lands in a skill.invoked
+			// record whose text (agentminutes v0.7.0+) is the delivered
+			// SKILL.md body, frontmatter stripped and byte-exact what
+			// skill.context_delivered_ref hashes, so a traced phrase from
+			// the body surfaces as harness-injected, as on claude-code.
+			SkillListingSubtypes: []string{"system.message"},
+			// No system subtype replays conversation text: the ones with
+			// text at all are the system prompt, the delivered skill body,
+			// an abort reason, and session info, none of them the user's
+			// prompt or the model's answer.
+			EchoSubtypes:           map[string]bool{},
+			RecordsInjectedContext: true,
+			LocateSlack:            5 * time.Second,
+		},
 	}
 }
 
@@ -147,7 +175,10 @@ func SeedRoot() (string, error) {
 // and config.toml from the real ~/.codex; claude-code needs
 // CLAUDE_CODE_OAUTH_TOKEN in the environment (macOS keychain credentials
 // are unreachable from a sandboxed CLAUDE_CONFIG_DIR); antigravity clones
-// a seed home the user authenticated once.
+// a seed home the user authenticated once; copilot needs nothing on macOS
+// (its keychain token stays reachable under a COPILOT_HOME override) and
+// clones ~/.skillxp/seeds/copilot when present for hosts where copilot
+// fell back to a plaintext config.json.
 func (p Profile) PrepareSandbox(fixtureDir string) (*Sandbox, error) {
 	seedRoot, err := SeedRoot()
 	if err != nil {
@@ -208,6 +239,28 @@ func (p Profile) PrepareSandbox(fixtureDir string) (*Sandbox, error) {
 			TranscriptRoot: filepath.Join(dir, "sessions"),
 			UserSkillDir:   filepath.Join(dir, "skills"),
 		}, nil
+	case agentsummons.Copilot:
+		dir := filepath.Join(fixtureDir, "home", "copilot")
+		seed := filepath.Join(seedRoot, "copilot")
+		if _, err := os.Stat(seed); err == nil {
+			if err := copyTree(seed, dir); err != nil {
+				return nil, err
+			}
+		} else if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, err
+		}
+		// Validated 1.0.88: a fresh COPILOT_HOME authenticated with no
+		// token material because the /login OAuth token lives in the
+		// macOS keychain, not under the home. Where no keychain is
+		// available copilot stores the token in ~/.copilot/config.json
+		// instead; that file belongs in the seed, or a token goes in the
+		// environment (COPILOT_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN,
+		// which copilot reads ahead of stored credentials).
+		return &Sandbox{
+			Env:            []string{"COPILOT_HOME=" + dir},
+			TranscriptRoot: filepath.Join(dir, "session-state"),
+			UserSkillDir:   filepath.Join(dir, "skills"),
+		}, nil
 	case agentsummons.Antigravity:
 		seed := filepath.Join(seedRoot, "antigravity", "home")
 		if _, err := os.Stat(seed); err != nil {
@@ -230,7 +283,7 @@ func (p Profile) PrepareSandbox(fixtureDir string) (*Sandbox, error) {
 }
 
 // ActivationPrompt is the natural-language activation trigger validated on
-// all three harnesses. Slash-command and other activation styles are a
+// every supported harness. Slash-command and other activation styles are a
 // future check dimension, not a runner default.
 func (p Profile) ActivationPrompt(skill string) string {
 	return fmt.Sprintf("Activate the %s skill and follow its instructions.", skill)
@@ -242,7 +295,7 @@ func (p Profile) ActivationPrompt(skill string) string {
 // antigravity needs permission bypass for its view_file pull. Passive turns
 // (phrase interrogation) get no tool permissions at all.
 func (p Profile) Prepare(req *agentsummons.Request, activation bool) error {
-	if p.Harness == agentsummons.ClaudeCode {
+	if p.presetsIdentity() {
 		// Preset identity so the transcript is addressable before the run.
 		id, err := newUUID()
 		if err != nil {
@@ -250,8 +303,28 @@ func (p Profile) Prepare(req *agentsummons.Request, activation bool) error {
 		}
 		req.SessionID = id
 	}
+	p.pin(req)
 	p.permissions(req, activation)
 	return nil
+}
+
+// presetsIdentity reports whether the harness accepts a caller-chosen
+// session ID, which makes the transcript addressable before the run and
+// lets Locate resolve it directly instead of scanning a time window
+// (claude-code --session-id, established 2.1.205; copilot --session-id,
+// established 1.0.88, where resume also preserves the preset ID).
+func (p Profile) presetsIdentity() bool {
+	return p.Harness == agentsummons.ClaudeCode || p.Harness == agentsummons.Copilot
+}
+
+// pin applies the environment that keeps a run on the release the
+// observation is attributed to. copilot auto-updates on launch outside CI
+// (1.0.88), which could swap the binary between the version probe and the
+// run; COPILOT_AUTO_UPDATE=false holds the installed release.
+func (p Profile) pin(req *agentsummons.Request) {
+	if p.Harness == agentsummons.Copilot {
+		req.ExtraEnv = append(req.ExtraEnv, "COPILOT_AUTO_UPDATE=false")
+	}
 }
 
 // PrepareResume applies harness-specific settings for a follow-up turn in
@@ -260,6 +333,7 @@ func (p Profile) Prepare(req *agentsummons.Request, activation bool) error {
 // competing identity claims.
 func (p Profile) PrepareResume(req *agentsummons.Request, activation bool, sessionID string) {
 	req.Resume = sessionID
+	p.pin(req)
 	p.permissions(req, activation)
 }
 
@@ -275,15 +349,19 @@ func (p Profile) permissions(req *agentsummons.Request, activation bool) {
 	case agentsummons.Codex:
 		// Default read-only sandbox covers activation; codex's model-pull
 		// only needs file reads.
+	case agentsummons.Copilot:
+		// A headless run executes read-only tools without a bypass flag
+		// and denies only writes (1.0.88); the `skill` tool ran and
+		// delivered the body with no flag at all.
 	}
 }
 
 // Locate finds the transcript a finished run wrote, waiting briefly for the
 // harness to flush it. root overrides the harness's default transcript
 // root (a sandbox's TranscriptRoot); empty means the default. Strategy per
-// harness: claude-code resolves the preset session ID directly; codex
-// scans filtered by the run's cwd and time window; antigravity scans by
-// time window alone (its transcripts record no cwd).
+// harness: claude-code and copilot resolve the preset session ID directly;
+// codex scans filtered by the run's cwd and time window; antigravity scans
+// by time window alone (its transcripts record no cwd).
 func (p Profile) Locate(ctx context.Context, res *agentsummons.Result, root string) (harness.SessionRef, error) {
 	deadline := time.Now().Add(15 * time.Second)
 	for {
@@ -306,9 +384,9 @@ func (p Profile) Locate(ctx context.Context, res *agentsummons.Result, root stri
 // briefly for the harness to flush. root overrides the default transcript
 // root; empty means the default. Resume turns append to the same session
 // on every supported harness (established on claude-code 2.1.205, codex
-// 0.144.6, antigravity 1.1.4; re-confirmed by the drift probe's resume
-// check through LastValidated), so a follow-up turn's transcript is
-// always reachable by the opening turn's ID.
+// 0.144.6, antigravity 1.1.4, copilot 1.0.88; re-confirmed by the drift
+// probe's resume check through LastValidated), so a follow-up turn's
+// transcript is always reachable by the opening turn's ID.
 func (p Profile) LocateByID(ctx context.Context, sessionID, root string) (harness.SessionRef, error) {
 	l, err := agentminutes.LocatorFor(harness.ID(p.Harness))
 	if err != nil {
@@ -348,7 +426,7 @@ func (p Profile) locateOnce(res *agentsummons.Result, root string) (harness.Sess
 	if err != nil {
 		return harness.SessionRef{}, err
 	}
-	if p.Harness == agentsummons.ClaudeCode {
+	if p.presetsIdentity() {
 		return locateIn(l, root, res.SessionID)
 	}
 	if root == "" {

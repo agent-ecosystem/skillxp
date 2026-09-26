@@ -11,7 +11,8 @@ into the experiment (your own installed skills appearing in listings)
 nor be polluted by it.
 
 Bundled skills still appear: harnesses ship built-ins (claude-code's own
-skill set, codex's imagegen) that exist in every home, sandboxed or not.
+skill set, codex's imagegen, copilot's cloud-agent and PR-media skills)
+that exist in every home, sandboxed or not.
 Treat them as harness baseline, never as contamination.
 
 Sandboxing also unlocks user-scope installs (`-install-user` /
@@ -27,6 +28,7 @@ step, and every failure mode is a guided error:
 |---|---|---|
 | codex | `CODEX_HOME` | None: `auth.json` (+`config.toml`) is copied from `~/.codex`, or from `~/.skillxp/seeds/codex/` if you prefer a curated seed |
 | claude-code | `CLAUDE_CONFIG_DIR` | `claude setup-token`, exported as `CLAUDE_CODE_OAUTH_TOKEN` (bills to your subscription; macOS keychain credentials are unreachable from a sandboxed config dir). To keep the token off disk, store it in 1Password, export the `op://` reference instead, and run under `op run -- <command>`; an unresolved reference is a guided error. |
+| copilot | `COPILOT_HOME` | None on macOS: the `/login` token lives in the keychain, which the override does not hide. On a host where copilot stored the token in a plaintext `config.json` instead, put that file under `~/.skillxp/seeds/copilot/` (cloned into every sandbox) or export `COPILOT_GITHUB_TOKEN` |
 | antigravity | `HOME` | Authenticate once into a persistent seed: `mkdir -p ~/.skillxp/seeds/antigravity/home && HOME=~/.skillxp/seeds/antigravity/home agy`, log in, quit; runs clone the seed. macOS will report a missing keychain during login. Click **Cancel**: agy then stores its token as a file inside the seed (`antigravity-oauth-token`), which is exactly what HOME-swapped clones can use. Never click "Reset To Defaults". |
 
 ## Safety properties
@@ -39,3 +41,6 @@ Two safety properties are deliberate:
 - Sandboxed antigravity runs set `BROWSER=false`, so a failed auth
   transplant errors in text instead of opening a login page in your
   browser.
+- Every copilot run, sandboxed or not, sets `COPILOT_AUTO_UPDATE=false`,
+  so the CLI cannot swap releases between the version probe and the
+  run.
