@@ -139,6 +139,44 @@ gets a fixture there); and describe the change under Unreleased in
 bump and a changelog line. Keep `-keep` transcripts around while doing
 this; they are the evidence.
 
+## Docs site
+
+Docs pages go through `site/check_prose_style`, `vale --config
+site/.vale.ini README.md`, a `hugo` build, and `npm run
+test:agent-docs:local` from `site/` (`npm ci` there first) before they
+are done. That last one serves the working tree with `hugo server` and
+runs the pinned afdocs against it; CI runs the same script on every pull
+request touching `site/**`. It skips `content-negotiation` and
+`cache-header-hygiene`, which measure Dreamhost's Apache config that no
+local server has; the live workflow covers those.
+
+`site/package.json` pins the afdocs version; a new afdocs release usually
+adds checks, so bumping it can surface warns that were not there before.
+Bump with `npm install -D afdocs@latest` in `site/`, run
+`npm run test:agent-docs:local`, and fix what it reports before
+committing the lockfile. The afdocs migration guide for the release says
+which checks are new and how scores move.
+
+A warn does not fail the test, by design: the check ran and the site is
+usable, the result is just not the best one available. So read the
+per-check lines rather than the exit code alone. `npx afdocs check <url>
+--fixes` prints the fix advice for a single warn, and `--format
+scorecard` gives the weighted score the vitest output does not show.
+
+Two things in the site exist only to satisfy checks, and a theme or
+template change can quietly undo either.
+`layouts/partials/absolute-links.html` rewrites root-relative markdown
+link destinations to absolute ones, for `markdown-link-portability`;
+content keeps authoring `](/docs/...)`, and only the markdown output is
+rewritten. `layouts/docs/baseof.html` renders the sidebar nav after
+`</main>`, so page content leads the DOM, for `content-start-position`;
+the sidebar is `position: fixed` so the rendered page is unaffected, and
+the skip link above `<main>` keeps keyboard navigation reachable.
+
+`.github/workflows/agent-docs.yml` pins the Hugo version so a Hugo
+release cannot fail a pull request that did not touch the site. Move it
+when the version on the machine that runs `site/build_and_sync` moves.
+
 ## Releasing
 
 Distribution matches agentsummons: goreleaser builds the archives and
@@ -160,7 +198,10 @@ Cutting a release:
    GitHub release notes and **fails the release if the section is
    missing**, so this step cannot be skipped.
 3. Bump the hero badge version in `site/data/landing.yaml`
-   (`hero.badge.text`) and republish the docs site.
+   (`hero.badge.text`) and republish the docs site with
+   `site/build_and_sync`. Then run `npm run test:agent-docs` from
+   `site/`, or dispatch the "Agent-Friendly Docs (live site)" workflow,
+   to check the deployed site.
 4. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`. The Release
    workflow does the rest: GitHub release + archives, brew formula
    (`Formula/skillxp.rb` in the tap), npm packages (platform packages +
